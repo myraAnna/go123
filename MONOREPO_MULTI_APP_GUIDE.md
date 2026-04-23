@@ -221,6 +221,8 @@ What we're actually building on top of the scaffold: a free POS for TNG micro-me
 
 This section maps the MVP features onto the three services. It assumes the generic rules in §2 and §9 still hold — `web → api → ai` only, `ai/` stays stateless.
 
+> Full request/response shapes, stub-mode fixtures, middleware rules, and time-zone conventions live in [`CONTRACTS.md`](./CONTRACTS.md). This section is the architecture overview; `CONTRACTS.md` is the day-to-day reference during parallel work.
+
 ### 5a. Feature → service mapping
 
 | MVP feature                           | `web/` (Next.js)                                    | `api/` (Hono BFF)                                                                                   | `ai/` (FastAPI)                                                                 |
