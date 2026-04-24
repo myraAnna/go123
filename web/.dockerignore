@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.gitignore
+.dockerignore
+*.md
+.env
+.env.*
+.vscode
+.idea
+public

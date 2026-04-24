@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      
+      - name: Install web deps
+        run: cd web && bun install --frozen-lockfile
+      
+      - name: Install api deps
+        run: cd api && bun install --frozen-lockfile
+      
+      - name: Install ai deps
+        run: |
+          pip install uv
+          cd ai && uv sync --frozen
+      
+      - name: Build web
+        run: cd web && bun run build
+      
+      - name: Build api
+        run: cd api && bun run build
+      
+      - run: echo "CI passed"
+

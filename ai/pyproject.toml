@@ -1,0 +1,23 @@
+[project]
+name = "warung-ai"
+version = "0.1.0"
+description = "AI/ML service for Warung AI - menu parsing and text-to-SQL"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "boto3>=1.35",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.7",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
