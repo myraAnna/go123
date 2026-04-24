@@ -81,17 +81,17 @@ web/ (:3000) → api/ (:3001) → ai/ (:8001)
 
 ## For Claude Code Users
 
-This project is optimized for Claude Code development:
+This project is optimized for AI-assisted development:
 
-1. **Read first**: `.claude/specs/CONTRACTS.md` (API contracts)
-2. **Read**: `.claude/specs/MONOREPO_MULTI_APP_GUIDE.md` (architecture)
-3. **Check**: `AGENTS.md` and service-specific `AGENTS.md` files
-4. **No tests** — Build features fast for hackathon
-5. **Markdown**: kebab-case, place in `.claude/plans/`
+1. **Just describe what you want** — Claude Code reads context automatically
+2. **Context files**: `AGENTS.md`, service-level `CLAUDE.md`, `.claude/specs/`
+3. **No tests** — Build features fast
+4. **Markdown**: kebab-case in `.claude/plans/`
+5. **Commits**: Claude Code follows the convention in `AGENTS.md`
 
 ## Documentation
 
 - `AGENTS.md` → Monorepo context
 - `CLAUDE.md` → AI assistant guide
-- `.claude/specs/` → API contracts & architecture
+- `.claude/specs/` → Original API contracts & architecture files
 - Service guides: `web/AGENTS.md`, `api/AGENTS.md`, `ai/AGENTS.md`
