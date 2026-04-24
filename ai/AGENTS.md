@@ -14,7 +14,7 @@
 **Anomaly**: `POST /v1/anomaly` → Z-score detection (optional)  
 **Health**: `GET /health`
 
-See `CONTRACTS.md` for shapes.
+See `../.claude/specs/CONTRACTS.md` for shapes.
 
 ## Key Rules
 - No `id` in parse-menu output (api/ assigns)
@@ -45,6 +45,11 @@ class MenuItem(BaseModel):
 Bypass Bedrock, return fixtures from `src/fixtures/*.json`
 
 ## Quick Start
+```bash
+make dev-ai     # Starts on http://localhost:8001
+```
+
+Or manually:
 ```bash
 uv sync && uv run uvicorn src.main:app --reload --port 8001
 ```

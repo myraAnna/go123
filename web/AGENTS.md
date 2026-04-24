@@ -26,7 +26,7 @@ Base URL: `NEXT_PUBLIC_API_URL` (default: `http://localhost:3001`)
 
 `POST /v1/menu/parse`, `POST /v1/orders`, `GET /v1/stats/*`, `POST /v1/ask`, `GET /v1/scorecard`, `POST /v1/einvoice/generate`, `POST /v1/credit/apply`
 
-See `CONTRACTS.md` for shapes.
+See `../.claude/specs/CONTRACTS.md` for shapes.
 
 ## Conventions
 - Money: Display as `RM ${(cents / 100).toFixed(2)}`
@@ -39,6 +39,11 @@ See `CONTRACTS.md` for shapes.
 Hand-maintained in `src/lib/types.ts`. Mirror BFF responses.
 
 ## Quick Start
+```bash
+make dev-web    # Starts on http://localhost:3000
+```
+
+Or manually:
 ```bash
 bun install && bun dev
 ```

@@ -53,9 +53,10 @@ web/ (Next.js) → api/ (Hono BFF) → ai/ (FastAPI)
 ## Quick Start
 
 ```bash
-cd web && bun dev        # localhost:3000
-cd api && bun dev        # localhost:3001
-cd ai && uv run uvicorn src.main:app --reload --port 8001
+make setup        # First time
+make dev-web      # Web developer (:3000)
+make dev-api      # API developer (:3001)
+make dev-ai       # AI developer (:8001)
 ```
 
 ## Key Conventions

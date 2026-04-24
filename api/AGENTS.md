@@ -23,7 +23,7 @@
 **Credit**: `GET /v1/scorecard`, `POST /v1/einvoice/generate`, `POST /v1/credit/apply`  
 **Health**: `GET /health`
 
-See `CONTRACTS.md` for shapes.
+See `../.claude/specs/CONTRACTS.md` for shapes.
 
 ## DB Schema
 ```sql
@@ -54,11 +54,16 @@ Bypass DB/AI, return fixtures from `src/fixtures/*.json`
 
 ## Quick Start
 ```bash
+make dev-api    # Starts on http://localhost:3001
+```
+
+Or manually:
+```bash
 bun install && bun dev
 ```
 
 ## Don't
-- ❌ Handle end-user auth
-- ❌ Implement ML/AI logic
-- ❌ Expose raw DB errors
-- ❌ Use floats for money
+- Handle end-user auth
+- Implement ML/AI logic
+- Expose raw DB errors
+- Use floats for money
