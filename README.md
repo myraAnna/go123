@@ -6,24 +6,21 @@ AI-powered POS for Malaysian micro-merchants
 
 **Install Make first** (required for all commands below):
 
-**macOS:**
 ```bash
 xcode-select --install  # Includes make
 ```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update && sudo apt install build-essential
-```
-
-**Windows:**
-- Install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) then follow Ubuntu steps above
-- Or install [Chocolatey](https://chocolatey.org/) then: `choco install make`
 
 **Verify installation:**
 ```bash
 make --version  # Should show GNU Make 4.x or later
 ```
+
+**Don't know how to set up?** Just ask Claude Code:
+- "Help me install make on macOS"
+- "Set up my development environment for this project"
+- "Run make setup and tell me if there are any errors"
+
+Claude Code can help you install dependencies, troubleshoot issues, and get everything running.
 
 ## Quick Start (For New Developers)
 
@@ -70,7 +67,7 @@ web/ (:3000) → api/ (:3001) → ai/ (:8001)
 
 **Rule**: `web` never calls `ai` directly. All requests: `web → api → ai`
 
-## ⚡ Hackathon Philosophy
+## Hackathon Philosophy
 
 **This is a hackathon project.** Optimize for:
 - Speed over quality

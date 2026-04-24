@@ -4,23 +4,21 @@
 
 **Install Make first** (required):
 
-**macOS:**
 ```bash
 xcode-select --install
 ```
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update && sudo apt install build-essential
-```
-
-**Windows:**
-- Use WSL2, then: `sudo apt install build-essential`
 
 **Verify:**
 ```bash
 make --version
 ```
+
+**Need help setting up?** Ask Claude Code to do it for you:
+- "Install make on my Mac"
+- "Run make setup and fix any errors"
+- "Check if I have all the prerequisites installed"
+
+Claude Code can install dependencies, run setup commands, and troubleshoot issues automatically.
 
 ## First Time Setup (Run Once)
 
@@ -100,6 +98,8 @@ Opens at: http://localhost:8001
 - Timestamps in UTC ISO-8601
 - Markdown: kebab-case in `.claude/plans/`
 - **HACKATHON MODE** — Speed > Everything. Ignore production concerns, security, scalability, NFRs.
+
+See `../AGENTS.md` for git commit convention.
 
 ## Hackathon Mindset
 

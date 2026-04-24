@@ -73,6 +73,23 @@ menu_items, orders, order_items, expenses
 ```
 All money: `INT` cents. Timestamps: `TIMESTAMPTZ`. PKs: `BIGSERIAL`.
 
+## Git Commit Convention
+
+**Format:** `what(which): message`
+
+- **what**: `feat`, `fix`, `refactor`, `docs`, `chore`, `style`, `test`
+- **which**: `web`, `api`, `ai`, `infra`, `docs`
+- **message**: lowercase, <100 chars
+
+**Examples:**
+```
+feat(api): add menu parse endpoint
+fix(web): qr code not rendering
+refactor(ai): simplify text-to-sql router
+docs: update readme with setup guide
+chore(infra): add docker compose for db
+```
+
 ## Context Files
 
 - `.claude/specs/CONTRACTS.md` → API request/response shapes
