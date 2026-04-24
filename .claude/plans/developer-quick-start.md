@@ -1,5 +1,27 @@
 # Developer Quick Start
 
+## Prerequisites
+
+**Install Make first** (required):
+
+**macOS:**
+```bash
+xcode-select --install
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update && sudo apt install build-essential
+```
+
+**Windows:**
+- Use WSL2, then: `sudo apt install build-essential`
+
+**Verify:**
+```bash
+make --version
+```
+
 ## First Time Setup (Run Once)
 
 ```bash
@@ -9,9 +31,9 @@ make setup
 ```
 
 This will:
-- ✅ Create `.env` from template
-- ✅ Install all dependencies (web, api, ai)
-- ✅ Ready to develop!
+- Create `.env` from template
+- Install all dependencies (web, api, ai)
+- Ready to develop!
 
 ## Pick Your Service
 
@@ -71,13 +93,13 @@ Opens at: http://localhost:8001
 
 ## Golden Rules
 
-- ❌ No tests
-- ❌ Web never calls AI directly
-- ❌ AI never touches DB
-- ✅ All money in cents (integers)
-- ✅ Timestamps in UTC ISO-8601
-- ✅ Markdown: kebab-case in `.claude/plans/`
-- ⚡ **HACKATHON MODE** — Speed > Everything. Ignore production concerns, security, scalability, NFRs.
+- No tests
+- Web never calls AI directly
+- AI never touches DB
+- All money in cents (integers)
+- Timestamps in UTC ISO-8601
+- Markdown: kebab-case in `.claude/plans/`
+- **HACKATHON MODE** — Speed > Everything. Ignore production concerns, security, scalability, NFRs.
 
 ## Hackathon Mindset
 

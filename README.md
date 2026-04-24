@@ -2,6 +2,29 @@
 
 AI-powered POS for Malaysian micro-merchants
 
+## Prerequisites
+
+**Install Make first** (required for all commands below):
+
+**macOS:**
+```bash
+xcode-select --install  # Includes make
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update && sudo apt install build-essential
+```
+
+**Windows:**
+- Install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) then follow Ubuntu steps above
+- Or install [Chocolatey](https://chocolatey.org/) then: `choco install make`
+
+**Verify installation:**
+```bash
+make --version  # Should show GNU Make 4.x or later
+```
+
 ## Quick Start (For New Developers)
 
 **First time? Run this:**

@@ -50,7 +50,7 @@ uv sync && uv run uvicorn src.main:app --reload --port 8001
 ```
 
 ## Don't
-- ❌ Handle auth/sessions
-- ❌ Access database
-- ❌ Implement business logic
-- ❌ Store money as floats
+- Handle auth/sessions
+- Access database
+- Implement business logic
+- Store money as floats
