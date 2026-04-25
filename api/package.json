@@ -8,7 +8,10 @@
     "start": "bun run dist/index.js",
     "typecheck": "tsc --noEmit",
     "migrate": "bun run src/db/migrate.ts",
-    "test:s3": "bun run src/scripts/test-s3.ts"
+    "seed:menu": "bun run src/scripts/seed-menu.ts",
+    "seed:orders": "bun run src/scripts/seed-orders.ts",
+    "test:s3": "bun run src/scripts/test-s3.ts",
+    "test:presign": "bun run src/scripts/test-presign.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

@@ -13,8 +13,9 @@ services:
     build: ./api
     ports:
       - '3001:3001'
+    env_file:
+      - ./api/.env
     environment:
-      AI_URL: http://ai:8001
       WEB_ORIGIN: http://localhost:3000
       DATABASE_URL: postgresql://postgres:postgres@db:5432/warung_ai
       FAKE_MODE: '0'

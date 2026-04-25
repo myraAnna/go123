@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db } from '../db/index.js';
-import { uploadBuffer } from '../clients/s3.js';
+import { uploadBuffer, getPresignedUrl } from '../clients/s3.js';
 import { parseMenuImage } from '../clients/ai.js';
 
 export const onboardingRouter = new Hono();
@@ -74,9 +74,17 @@ onboardingRouter.post('/image', async (c) => {
     return c.json({ error: 'Failed to record upload' }, 500);
   }
 
+  let imageUrl: string;
+  try {
+    imageUrl = getPresignedUrl(key);
+  } catch (err) {
+    console.error('Presign failed', err);
+    return c.json({ error: 'Failed to presign image url' }, 500);
+  }
+
   let parsed: { name: string; priceCents: number; category: string }[];
   try {
-    parsed = await parseMenuImage(key);
+    parsed = await parseMenuImage(imageUrl);
   } catch (err) {
     console.error('AI parse failed', err);
     return c.json({ error: 'AI service unavailable' }, 502);
