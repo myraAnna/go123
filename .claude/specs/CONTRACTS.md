@@ -28,7 +28,7 @@ Wire contracts between `web/`, `api/`, and `ai/` for the Warung AI Bookkeeper. L
 - **IDs: strings** (`"42"`) even though the DB uses `BIGSERIAL` — avoids JS number precision.
 - **Errors: `{ "error": "message", "code"?: "MACHINE_CODE" }`.** HTTP status carries the semantic (400 validation, 404 not found, 500 server). `code` only when `web/` needs to branch on it.
 - **No envelopes.** Response body is the data directly — `{ "items": [...] }`, never `{ "data": {...}, "meta": {...} }`.
-- **All routes under `/v1/...`.**
+- **All routes under `/v1/...`** — except public payment callbacks under `/callback/...`, which intentionally bypass auth so QR scans work header-less. See §3.2.
 
 ---
 
@@ -38,9 +38,9 @@ Source of truth is migrations under `api/` once scaffolded — this section is a
 
 | Table         | Fields                                                                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `menu_items`  | `id` BIGSERIAL · `name` TEXT · `price_cents` INT · `category` TEXT · `color` TEXT · `created_at` TIMESTAMPTZ                                   |
-| `orders`      | `id` BIGSERIAL · `total_cents` INT · `paid_at` TIMESTAMPTZ NULL · `qr_payload` TEXT · `created_at` TIMESTAMPTZ                                 |
-| `order_items` | `id` BIGSERIAL · `order_id` FK → orders · `menu_item_id` FK → menu_items · `qty` INT · `price_cents` INT (snapshot of price at order time)      |
+| `menu_items`  | `id` BIGSERIAL · `merchant_id` FK · `name` TEXT · `price_cents` INT · `category` TEXT · `created_at` TIMESTAMPTZ                                              |
+| `orders`      | `id` BIGSERIAL · `merchant_id` FK · `total_cents` INT · `qr_payload` TEXT · `paid_at` TIMESTAMPTZ NULL · `buyer_email` TEXT NULL · `created_at` TIMESTAMPTZ    |
+| `order_items` | `id` BIGSERIAL · `merchant_id` FK · `order_id` FK → orders · `menu_item_id` FK → menu_items · `name_snapshot` TEXT · `qty` INT · `unit_price_cents` INT (snapshot of price at order time) |
 | `expenses`    | `id` BIGSERIAL · `amount_cents` INT · `description` TEXT · `source` TEXT (`'receipt-scan'` \| `'manual'`) · `s3_key` TEXT NULL · `created_at` |
 
 Conventions: money is always `*_cents` INT; all timestamps are `TIMESTAMPTZ NOT NULL DEFAULT NOW()`; primary keys are `BIGSERIAL`.
@@ -108,7 +108,7 @@ Response `200`: same shape as `GET /v1/menu` (server-assigned ids for new items)
 
 #### `POST /v1/orders`
 
-Compute total, generate dummy DuitNow payload, insert `orders` + `order_items`.
+Compute total, insert `orders` + `order_items`, return the full breakdown. Menu items must belong to the requesting merchant.
 
 Request:
 
@@ -121,27 +121,91 @@ Response `201`:
 ```json
 {
   "orderId": "42",
-  "totalCents": 1150,
-  "qrPayload": "duitnow://pay?ref=ORDER-42&amount=11.50",
-  "createdAt": "2026-04-24T03:12:45.000Z"
+  "items": [
+    { "menuItemId": "1", "name": "Nasi Lemak Biasa", "qty": 2, "unitPriceCents": 500, "lineTotalCents": 1000 },
+    { "menuItemId": "3", "name": "Telur Mata",       "qty": 1, "unitPriceCents": 150, "lineTotalCents": 150 }
+  ],
+  "totalCents": 1150
 }
 ```
 
-Errors: `400` (unknown `menuItemId`, `qty < 1`).
+- Duplicate `menuItemId` entries in the request are aggregated (qty summed).
+- `unitPriceCents` is the price at order time (snapshotted into `order_items.unit_price_cents`).
 
-#### `POST /v1/orders/:id/paid`
+Errors: `400` (empty `items`, non-numeric `menuItemId`, `qty < 1`); `404` (any `menuItemId` not found for this merchant — body lists the missing IDs).
 
-Dummy payment webhook — marks the order paid. Idempotent (second call returns the original `paidAt`).
+#### `GET /v1/orders`
 
-Request: `{}`
+List orders for the current merchant, newest first, each with its line items. Single round-trip — orders + items are fetched in two queries and grouped server-side.
+
+Query params (all optional):
+
+- `from` — ISO 8601 timestamp; only orders with `created_at >= from` are returned.
+- `to`   — ISO 8601 timestamp; only orders with `created_at <= to` are returned.
 
 Response `200`:
 
 ```json
-{ "orderId": "42", "paidAt": "2026-04-24T03:13:02.000Z" }
+{
+  "orders": [
+    {
+      "orderId": "42",
+      "totalCents": 1150,
+      "paidAt": "2026-04-24T03:13:02.000Z",
+      "buyerEmail": "buyer@example.com",
+      "createdAt": "2026-04-24T03:12:45.000Z",
+      "items": [
+        { "menuItemId": "1", "name": "Nasi Lemak Biasa", "qty": 2, "unitPriceCents": 500, "lineTotalCents": 1000 },
+        { "menuItemId": "3", "name": "Telur Mata",       "qty": 1, "unitPriceCents": 150, "lineTotalCents": 150 }
+      ]
+    }
+  ]
+}
 ```
 
-Errors: `404` (unknown `orderId`).
+- `paidAt` and `buyerEmail` are `null` for unpaid orders.
+- Returns `{ "orders": [] }` if the merchant has none in range.
+
+Errors: `400` (invalid `from`/`to`).
+
+#### `GET /callback/orders/:id/paid?email=...`
+
+**Public payment callback — exception to the `/v1/*` rule.** Lives under `/callback/`, bypasses the `X-Merchant-Id` auth middleware, and is designed to be encoded directly into the order's QR code so a phone scan triggers it with no headers and no body.
+
+On first scan: marks the order paid (`paid_at = NOW()`, stores `buyer_email`) and emails an e-invoice to `email` via Resend (`src/clients/resend.ts`).
+
+On repeat scans: idempotent — does **not** re-send the invoice or overwrite the original `paid_at` / `buyer_email`.
+
+Query params:
+
+- `email` (required) — buyer's email; receives the e-invoice on first scan.
+
+Response `200` (first scan):
+
+```json
+{
+  "orderId": "42",
+  "paidAt": "2026-04-24T03:13:02.000Z",
+  "buyerEmail": "buyer@example.com",
+  "invoiceSent": true
+}
+```
+
+Response `200` (subsequent scan):
+
+```json
+{
+  "orderId": "42",
+  "paidAt": "2026-04-24T03:13:02.000Z",
+  "buyerEmail": "buyer@example.com",
+  "invoiceSent": false,
+  "alreadyPaid": true
+}
+```
+
+Errors: `400` (invalid `id`, missing/malformed `email`); `404` (order not found); `502` (e-invoice send failed via Resend).
+
+The invoice email includes: invoice number (`INV-` + zero-padded order id), issued/paid timestamps, a "PAID" badge, merchant block (business name, owner, address, phone, TIN, registration, SST), buyer email, line items, subtotal, and total.
 
 ### 3.3 Stats
 
