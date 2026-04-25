@@ -110,8 +110,9 @@ export default function PhotoUploadPage() {
               </>
             ) : (
               <>
-                <div className="w-16 h-16 rounded-full bg-[#E3F2FD]" />
-                <ImagePlus className="w-8 h-8 text-[#1565C0] -mt-2" />
+                <div className="w-16 h-16 rounded-full bg-[#E3F2FD] flex items-center justify-center">
+                  <ImagePlus className="w-8 h-8 text-[#1565C0]" />
+                </div>
                 <span className="text-[#1565C0] text-sm font-semibold">Tap to upload a photo</span>
                 <span className="text-[#9E9E9E] text-xs">JPG, PNG up to 10MB</span>
               </>
