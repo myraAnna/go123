@@ -42,6 +42,7 @@ Source of truth is migrations under `api/` once scaffolded — this section is a
 | `orders`      | `id` BIGSERIAL · `merchant_id` FK · `total_cents` INT · `qr_payload` TEXT · `paid_at` TIMESTAMPTZ NULL · `buyer_email` TEXT NULL · `created_at` TIMESTAMPTZ    |
 | `order_items` | `id` BIGSERIAL · `merchant_id` FK · `order_id` FK → orders · `menu_item_id` FK → menu_items · `name_snapshot` TEXT · `qty` INT · `unit_price_cents` INT (snapshot of price at order time) |
 | `expenses`    | `id` BIGSERIAL · `amount_cents` INT · `description` TEXT · `source` TEXT (`'receipt-scan'` \| `'manual'`) · `s3_key` TEXT NULL · `created_at` |
+| `merchants`   | `id` BIGSERIAL · profile (`business_name`, `owner_name`, `business_type`, `tin`, `registration_type`, `registration_number`, `phone`, `email` NULL) · address (`address_line1/2`, `city`, `state_code`, `postcode`, `country_code`) · MyInvois (`msic_code`, `sst_registration_number` NULL, `ttx_registration_number` NULL, `business_activity_description`) · `created_at` · `updated_at` |
 
 Conventions: money is always `*_cents` INT; all timestamps are `TIMESTAMPTZ NOT NULL DEFAULT NOW()`; primary keys are `BIGSERIAL`.
 
@@ -495,6 +496,53 @@ Response `200`:
 - If everything was a duplicate, returns `{ "items": [], "skippedCount": N }` with `200`.
 
 Errors: `400` (empty `items`, missing/empty `name`, `priceCents` not a positive integer, invalid `category`).
+
+### 3.8 Merchants
+
+#### `GET /v1/merchants/:id`
+
+Fetch a merchant's profile by id. Used by `web/` to render the e-invoice "From" block, settings page, and any UI that needs business identity.
+
+Response `200`:
+
+```json
+{
+  "merchant": {
+    "id": "1",
+    "businessName": "Warung Mak Cik",
+    "ownerName": "Siti binti Ahmad",
+    "businessType": "warung",
+    "tin": "C12345678901",
+    "registrationType": "BRN",
+    "registrationNumber": "201801234567",
+    "sstRegistrationNumber": null,
+    "ttxRegistrationNumber": null,
+    "msicCode": "56101",
+    "businessActivityDescription": "Restaurants and mobile food service activities",
+    "phone": "+60123456789",
+    "email": "siti@example.com",
+    "addressLine1": "123 Jalan Bukit Bintang",
+    "addressLine2": null,
+    "city": "Kuala Lumpur",
+    "stateCode": "14",
+    "postcode": "55100",
+    "countryCode": "MYS",
+    "createdAt": "2026-04-20T10:00:00.000Z",
+    "updatedAt": "2026-04-20T10:00:00.000Z"
+  }
+}
+```
+
+Enum-ish fields:
+
+- `businessType`: `"warung" | "food_stall" | "drink_stall" | "mobile_cart" | "coffee_shop" | "restaurant" | "market_stall" | "retail_kiosk" | "other"`
+- `registrationType`: `"BRN" | "NRIC" | "PASSPORT" | "ARMY"`
+- `stateCode`: zero-padded 2-digit code `"01"`–`"16"` (MY states/federal territories)
+- `countryCode`: always `"MYS"` for the hackathon
+
+Nullable: `sstRegistrationNumber`, `ttxRegistrationNumber`, `addressLine2`, `email`.
+
+Errors: `400` (non-numeric `id`); `404` (merchant not found).
 
 ---
 
