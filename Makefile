@@ -91,6 +91,19 @@ clean-all: clean
 	cd ai && rm -rf .venv
 	@echo "Full clean complete"
 
+# Development
+dev-web:
+	@echo "Starting web development server on :3000"
+	cd web && bun run dev
+
+dev-api:
+	@echo "Starting API development server on :3001"
+	cd api && bun run dev
+
+dev-ai:
+	@echo "Starting AI development server on :8001"
+	cd ai && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8001
+
 # Testing
 test: test-web test-api test-ai
 
