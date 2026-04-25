@@ -29,7 +29,10 @@ onboardingRouter.post('/image', async (c) => {
   }
 
   const contentType = file.type || 'image/jpeg';
-  const ext = MIME_TO_EXT[contentType] ?? 'jpg';
+  const ext = MIME_TO_EXT[contentType];
+  if (!ext) {
+    return c.json({ error: 'Unsupported image type. Use jpeg, png, webp, or gif.' }, 415);
+  }
   const key = `merchants/${merchantId}/menus/${crypto.randomUUID()}.${ext}`;
 
   const buffer = await file.arrayBuffer();
@@ -41,10 +44,15 @@ onboardingRouter.post('/image', async (c) => {
     return c.json({ error: 'Failed to upload image' }, 502);
   }
 
-  await db`
-    INSERT INTO merchant_menu_uploads (merchant_id, s3_key)
-    VALUES (${merchantId}, ${key})
-  `;
+  try {
+    await db`
+      INSERT INTO merchant_menu_uploads (merchant_id, s3_key)
+      VALUES (${merchantId}, ${key})
+    `;
+  } catch (err) {
+    console.error('DB insert failed for merchant_menu_uploads', err);
+    return c.json({ error: 'Failed to record upload' }, 500);
+  }
 
   let parsed: { name: string; priceCents: number }[];
   try {
@@ -90,7 +98,7 @@ onboardingRouter.post('/form', async (c) => {
     if (typeof item.name !== 'string' || !item.name.trim()) {
       return c.json({ error: 'Each item must have a non-empty name' }, 400);
     }
-    if (typeof item.priceCents !== 'number' || item.priceCents < 1) {
+    if (typeof item.priceCents !== 'number' || !Number.isInteger(item.priceCents) || item.priceCents < 1) {
       return c.json({ error: 'Each item must have priceCents >= 1' }, 400);
     }
   }
