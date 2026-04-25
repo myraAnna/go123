@@ -17,8 +17,8 @@ export default function ServicesPage() {
           <SearchBar />
         </div>
 
-        {/* Body - white background */}
-        <div className="flex flex-col gap-2.5 bg-white/10 rounded-t-2xl px-3 pt-3 pb-5">
+        {/* Body */}
+        <div className="flex flex-col gap-2.5 px-3 pt-3 pb-5">
           <FeaturedSection />
           <FilterTabs />
           <ServiceAccordion />

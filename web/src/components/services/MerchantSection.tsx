@@ -4,23 +4,40 @@ import * as React from "react";
 import { useState } from "react";
 import Link from "next/link";
 import { Monitor, Briefcase, DollarSign, Package, Bot, ChevronDown, ChevronUp } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 
-const merchants: { icon: React.ElementType; label: string; href?: string }[] = [
-  { icon: Monitor, label: "Dashboard" },
-  { icon: Briefcase, label: "Business Account" },
-  { icon: DollarSign, label: "BizCash" },
-  { icon: Package, label: "PacketHunt" },
-  { icon: Bot, label: "Warung AI", href: "/warung-ai" },
+const row1: { icon: React.ElementType; label: string; bg: string }[] = [
+  { icon: Monitor, label: "Dashboard", bg: "#E3F2FD" },
+  { icon: Briefcase, label: "Business Account", bg: "#FFF8E1" },
+  { icon: DollarSign, label: "BizCash", bg: "#E8F5E9" },
+  { icon: Package, label: "PacketHunt", bg: "#FCE4EC" },
 ];
 
-function MerchantIcon({ icon: Icon, label, href }: { icon: React.ElementType; label: string; href?: string }) {
+const row2: { icon: React.ElementType; label: string; bg: string; href?: string }[] = [
+  { icon: Bot, label: "Warung AI", bg: "#EDE7F6", href: "/warung-ai" },
+];
+
+function MerchantIcon({
+  icon: Icon,
+  label,
+  bg,
+  href,
+}: {
+  icon: React.ElementType;
+  label: string;
+  bg: string;
+  href?: string;
+}) {
   const content = (
     <div className="flex flex-col items-center gap-1.5">
-      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-        <Icon className="w-5 h-5 text-primary" />
+      <div
+        className="w-[52px] h-[52px] rounded-xl flex items-center justify-center"
+        style={{ background: bg }}
+      >
+        <Icon className="w-5 h-5 text-[#1350CC]" />
       </div>
-      <span className="text-xs text-primary font-medium text-center leading-tight">{label}</span>
+      <span className="text-[11px] text-[#444444] text-center leading-tight max-w-[60px]">
+        {label}
+      </span>
     </div>
   );
 
@@ -31,27 +48,28 @@ export function MerchantSection() {
   const [open, setOpen] = useState(true);
 
   return (
-    <Card className="ring-0 shadow-none">
-      <div
-        className="flex items-center justify-between px-4 pt-0 cursor-pointer"
+    <div className="bg-white rounded-xl p-4 flex flex-col gap-3.5">
+      <button
+        className="flex items-center justify-between w-full"
         onClick={() => setOpen(!open)}
       >
-        <span className="text-primary text-sm font-bold">Merchant Services</span>
+        <span className="text-[#1350CC] text-sm font-bold">Merchant Services</span>
         {open ? (
-          <ChevronUp className="w-5 h-5 text-primary" />
+          <ChevronUp className="w-5 h-5 text-[#1350CC]" />
         ) : (
-          <ChevronDown className="w-5 h-5 text-primary" />
+          <ChevronDown className="w-5 h-5 text-[#1350CC]" />
         )}
-      </div>
+      </button>
       {open && (
-        <CardContent>
-          <div className="grid grid-cols-4 gap-y-3.5">
-            {merchants.map((m) => (
-              <MerchantIcon key={m.label} icon={m.icon} label={m.label} href={m.href} />
-            ))}
+        <>
+          <div className="flex justify-between">
+            {row1.map((m) => <MerchantIcon key={m.label} {...m} />)}
           </div>
-        </CardContent>
+          <div className="flex">
+            {row2.map((m) => <MerchantIcon key={m.label} {...m} />)}
+          </div>
+        </>
       )}
-    </Card>
+    </div>
   );
 }

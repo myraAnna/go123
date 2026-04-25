@@ -48,3 +48,15 @@ export async function submitOnboardingForm(
   const data = (await res.json()) as { items: MenuItem[] };
   return data.items;
 }
+
+export async function fetchOnboardingMenu(): Promise<MenuItem[]> {
+  const res = await fetch(`${API_BASE}/v1/onboarding/menu`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!res.ok) throw new ApiError(res.status);
+
+  const data = (await res.json()) as { items: MenuItem[] };
+  return data.items;
+}

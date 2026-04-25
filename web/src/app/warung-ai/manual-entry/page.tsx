@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CirclePlus, Loader2, AlertCircle } from "lucide-react";
 import { StatusBar } from "@/components/services/StatusBar";
 import { PageNav } from "@/components/warung-ai/PageNav";
@@ -24,6 +25,7 @@ function priceToCents(price: string): number | null {
 }
 
 export default function ManualEntryPage() {
+  const router = useRouter();
   const [items, setItems] = useState<MenuItem[]>([
     { id: 1, name: "", price: "" },
     { id: 2, name: "", price: "" },
@@ -73,10 +75,8 @@ export default function ManualEntryPage() {
     setError(null);
 
     try {
-      const saved = await submitOnboardingForm(payload);
-      sessionStorage.setItem("warungAi.menuItems", JSON.stringify(saved));
-      // TODO: router.push("/warung-ai/pos") once flow is wired
-      console.log("Saved menu items:", saved);
+      await submitOnboardingForm(payload);
+      router.push("/warung-ai/pos");
     } catch (err) {
       if (err instanceof ApiError) {
         setError(

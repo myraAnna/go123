@@ -17,7 +17,7 @@ export function StatusBar({ time = "12:36", show4G = true, theme = "light" }: St
       <div className="flex items-center gap-1.5">
         <Signal className={cn("w-4 h-4", color)} />
         {show4G && (
-          <span className={cn("text-xs font-bold rounded px-1", color, badgeBg)}>4G</span>
+          <span className="text-[9px] font-extrabold bg-[#F5C000] text-black rounded px-1">4G</span>
         )}
         <Wifi className={cn("w-4 h-4", color)} />
         <Battery className={cn("w-4 h-4", color)} />
