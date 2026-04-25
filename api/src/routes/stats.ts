@@ -92,3 +92,42 @@ statsRouter.get('/summary', async (c) => {
     comparePrevious,
   });
 });
+
+type HeatmapRow = {
+  day_of_week: number;
+  hour: number;
+  order_count: number;
+  revenue_cents: number;
+};
+
+// GET /v1/stats/heatmap?since=&until=
+statsRouter.get('/heatmap', async (c) => {
+  const merchantId = c.get('merchantId');
+
+  const parsed = parseWindow(c.req.query('since'), c.req.query('until'));
+  if ('error' in parsed) return c.json({ error: parsed.error }, 400);
+  const { since, until } = parsed.window;
+
+  const rows = await db<HeatmapRow[]>`
+    SELECT EXTRACT(DOW  FROM paid_at AT TIME ZONE 'Asia/Kuala_Lumpur')::int AS day_of_week,
+           EXTRACT(HOUR FROM paid_at AT TIME ZONE 'Asia/Kuala_Lumpur')::int AS hour,
+           COUNT(*)::int                AS order_count,
+           COALESCE(SUM(total_cents),0)::int AS revenue_cents
+    FROM orders
+    WHERE merchant_id = ${merchantId}
+      AND paid_at IS NOT NULL
+      AND paid_at >= ${since}
+      AND paid_at <  ${until}
+    GROUP BY 1, 2
+    ORDER BY 1, 2
+  `;
+
+  return c.json({
+    cells: rows.map((r) => ({
+      dayOfWeek: r.day_of_week,
+      hour: r.hour,
+      orderCount: r.order_count,
+      revenueCents: r.revenue_cents,
+    })),
+  });
+});
