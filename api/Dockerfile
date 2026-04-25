@@ -8,6 +8,7 @@ RUN bun install --frozen-lockfile
 # Copy source
 COPY src ./src
 COPY tsconfig.json ./
+COPY migrations ./migrations
 
 # Production
 FROM oven/bun:1-slim AS production
@@ -16,4 +17,4 @@ COPY --from=base /app .
 
 EXPOSE 3001
 ENV NODE_ENV=production
-CMD ["bun", "run", "src/index.ts"]
+CMD ["sh", "-c", "bun run src/db/migrate.ts && bun run src/index.ts"]

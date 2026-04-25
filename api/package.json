@@ -6,7 +6,8 @@
     "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun run dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "migrate": "bun run src/db/migrate.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -15,7 +16,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.0",
-    "hono": "^4.12.15"
+    "hono": "^4.12.15",
+    "postgres": "^3.4.5"
   }
 }
