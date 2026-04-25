@@ -30,6 +30,6 @@ export async function createOrder(
 }
 
 export function paidCallbackUrl(orderId: string): string {
-  const email = "buyer@example.com";
+  const email = "kaniellau12@gmail.com";
   return `${API_BASE}/callback/orders/${orderId}/paid?email=${encodeURIComponent(email)}`;
 }

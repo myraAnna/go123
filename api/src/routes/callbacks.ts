@@ -5,6 +5,9 @@ import { sendEmail } from '../clients/resend.js';
 
 export const callbacksRouter = new Hono();
 
+const webOrigin = () => process.env.WEB_ORIGIN || 'http://localhost:3000';
+const payPageUrl = (orderId: string) => `${webOrigin()}/warung-ai/pay/${orderId}`;
+
 type OrderRow = {
   id: bigint | string;
   merchant_id: bigint | string;
@@ -86,13 +89,7 @@ callbacksRouter.get('/orders/:id/paid', async (c) => {
   const order = updated[0];
 
   if (order.was_already_paid) {
-    return c.json({
-      orderId: String(order.id),
-      paidAt: order.paid_at ? order.paid_at.toISOString() : null,
-      buyerEmail: order.buyer_email,
-      invoiceSent: false,
-      alreadyPaid: true,
-    });
+    return c.redirect(payPageUrl(String(order.id)), 302);
   }
 
   const [items, merchantRows] = await Promise.all([
@@ -313,10 +310,5 @@ callbacksRouter.get('/orders/:id/paid', async (c) => {
     return c.json({ error: 'Failed to send invoice email', orderId: orderIdStr }, 502);
   }
 
-  return c.json({
-    orderId: orderIdStr,
-    paidAt: paidAtIso,
-    buyerEmail: paymentEmail,
-    invoiceSent: true,
-  });
+  return c.redirect(payPageUrl(orderIdStr), 302);
 });
