@@ -219,23 +219,25 @@ dev-dependencies = [
 
 What we're actually building on top of the scaffold: a free POS for TNG micro-merchants (kopitiam, pasar malam, kedai runcit) with AI onboarding, conversational analytics, LHDN/GoPinjam export, and a credit scorecard.
 
-This section maps the MVP features onto the three services. It assumes the generic rules in §2 and §9 still hold — `web → api → ai` only, `ai/` stays stateless.
+This section maps the MVP features onto the three services. It assumes the generic rules in §2 and §9 still hold — `web → api → ai` only, and `ai/` stays private behind the BFF even when it gets read-only DB access for chat.
 
 > Full request/response shapes, stub-mode fixtures, middleware rules, and time-zone conventions live in [`CONTRACTS.md`](./CONTRACTS.md). This section is the architecture overview; `CONTRACTS.md` is the day-to-day reference during parallel work.
+>
+> Restricted values and LHDN-only formulas live in [`REFERENCE_DATA_V1.md`](./REFERENCE_DATA_V1.md) and [`LHDN_CALCULATIONS_V1.md`](./LHDN_CALCULATIONS_V1.md).
 
 ### 5a. Feature → service mapping
 
 | MVP feature                           | `web/` (Next.js)                                    | `api/` (Hono BFF)                                                                                   | `ai/` (FastAPI)                                                                 |
 | ------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| **1. Rapid AI onboarding**            | Voice/text input, render generated menu grid        | `POST /v1/menu/parse` — auth, call `ai/`, persist `menu_items`                                      | `POST /v1/parse-menu` — LLM parses "I sell nasi lemak RM5..." into items        |
+| **1. Rapid AI onboarding**            | Voice/text input, render generated menu grid        | `POST /v1/menu/parse` — auth, call `ai/`, apply UI defaults, persist `menu_items`                   | `POST /v1/parse-menu` — LLM extracts item facts and suggests draft item metadata |
 | **2. Dynamic QR POS engine**          | Item buttons, running total, QR display, success    | `POST /v1/orders`, `POST /v1/orders/:id/paid`, offline sync                                         | —                                                                               |
-| **3. Conversational BM dashboard**    | Stat cards, charts, heatmap, BM chat box            | `/v1/stats/*` aggregations; `POST /v1/ask` (calls `ai/`, then executes returned SQL itself)         | `POST /v1/text-to-sql`; `POST /v1/anomaly` (optional)                           |
-| **4. LHDN / GoPinjam export**         | Two buttons + result screens                        | `POST /v1/einvoice/generate` (PDF or stubbed MyInvois call), `POST /v1/credit/apply`                | —                                                                               |
+| **3. Conversational BM dashboard**    | Stat cards, charts, heatmap, BM chat box            | `/v1/stats/*` aggregations; `POST /v1/ask` (auth, attach merchant context, proxy answer to FE)      | `POST /v1/ask`; `POST /v1/anomaly` (optional)                                   |
+| **4. LHDN / GoPinjam export**         | Two buttons + result screens                        | `POST /v1/exports/lhdn` (4-document export pack), `POST /v1/credit/apply`                            | —                                                                               |
 | **5. Credit scorecard**               | Gauges, profit %, sparkline, star rating            | `GET /v1/scorecard` — computes stability, margin, growth, diligence from DB                         | —                                                                               |
 
 ### 5b. Why this split
 
-- **`ai/` only does the genuinely AI parts.** Menu parsing (LLM), text-to-SQL (LLM), optional anomaly detection. Everything else is deterministic and belongs in `api/` — no reason to pay an LLM round-trip for arithmetic.
+- **`ai/` only does the genuinely AI parts.** Menu parsing (LLM), conversational reasoning over merchant-scoped read-only data, optional anomaly detection. Writes and deterministic finance math still belong in `api/`.
 - **`api/` owns the database and all business math.** Scorecard components, time-bucket aggregations, e-Invoice formatting, credit application bundling — plain SQL + TypeScript.
 - **`web/` is dumb.** Three routes: `/onboarding`, `/pos`, `/dashboard`. It renders and POSTs, nothing else. Per §2, it doesn't know `ai/` exists.
 
@@ -246,39 +248,41 @@ api/
   POST   /v1/menu/parse            # { transcript } → { items }
   GET    /v1/menu                  # list merchant's menu
   POST   /v1/menu                  # add/update items
-  POST   /v1/orders                # { items } → { orderId, qrPayload, totalCents }
+  POST   /v1/orders                # { items } → { orderId, subtotalCents, taxCents, totalCents, qrPayload }
   POST   /v1/orders/:id/paid       # dummy webhook → mark paid
   GET    /v1/stats/today           # { totalCents, orderCount, topItems }
   GET    /v1/stats/heatmap         # hour × day-of-week grid
   GET    /v1/stats/growth          # MoM %, 3mo sparkline
-  POST   /v1/ask                   # { question } → { sql, rows, answer }
+  POST   /v1/ask                   # { question } → { answer, evidence }
   GET    /v1/scorecard             # { stability, margin, growth, diligence }
-  POST   /v1/einvoice/generate     # { from, to } → { pdfUrl }  (or stubbed MyInvois call)
+  POST   /v1/exports/lhdn          # { from, to } → { exportJobId, documents[] }
   POST   /v1/credit/apply          # → { approved, amountRm, reason }
 
 ai/
-  POST   /v1/parse-menu            # { transcript } → { items: [{ name, priceCents, category, color }] }
-  POST   /v1/text-to-sql           # { question, schema } → { sql, explanation }
+  POST   /v1/parse-menu            # { transcript } → draft items: { name, priceCents, category?, unitCode?, classificationCode?, taxCode?, taxRateMode?, taxRatePct?, taxPerUnitCents?, reviewRequired? }
+  POST   /v1/ask                   # { question, merchantId, timeZone } → { answer, evidence, queries? }
   POST   /v1/anomaly               # { series } → { isAnomaly, expected }   (optional)
 ```
 
 ### 5d. Database (RDS for PostgreSQL, owned by `api/`)
 
-AWS RDS PostgreSQL on `db.t4g.micro` (free tier eligible), single-AZ, Singapore region — see §5g for the full AWS service map. Single-tenant for the hackathon. Add a `merchants` table + `merchant_id` FKs only if the demo needs multi-account switching.
+AWS RDS PostgreSQL on `db.t4g.micro` (free tier eligible), single-AZ, Singapore region — see §5g for the full AWS service map. Single-merchant operationally for the hackathon, but use a real `merchants` table and `merchant_id` foreign keys from day one.
 
 From `api/`, use the `pg` npm package (or `postgres` / Kysely if you want a thin query builder). The actual schema lives in migrations under `api/` when scaffolded — this guide only captures the shape.
 
 **Tables:**
 
-- **`menu_items`** — the merchant's POS catalog. Name, price (in cents), category, color. Created once at onboarding (§5e flow 1), editable later.
-- **`orders`** — one row per customer order. Total in cents, QR payload string, `paid_at` timestamp (null until the dummy payment webhook fires).
-- **`order_items`** — line items per order. FK to `orders` and `menu_items`, quantity, plus a price snapshot in cents (so historical reports don't change when a menu price is edited later).
-- **`expenses`** — merchant spend, feeds the profitability component of the scorecard. Source is either `'receipt-scan'` (with an `s3_key` pointing at the original image in S3) or `'manual'`.
+- **`merchants`** — one seeded merchant row in MVP, but a real entity for export labels, supplier identity, MSIC code, registration details, and future tenant safety.
+- **`menu_items`** — the merchant's POS catalog. Name, tax-exclusive selling price (in cents), category, optional MyInvois code-table metadata (`unit_code`, `classification_code`, `tax_code`), tax-rate fields, compliance review state, color, display order, and archive flag.
+- **`orders`** — one row per customer order. Tax-exclusive subtotal, tax amount, payable total, payment reference, QR payload string, `paid_at` timestamp (null until the dummy payment webhook fires).
+- **`order_items`** — line items per order. Carries `merchant_id` plus FKs to `orders` and `menu_items`, quantity, item-name snapshot, unit-price snapshot, and all sale-time compliance/tax snapshots needed for historical export reconstruction.
+- **`expenses`** — merchant spend, feeds profitability and diligence. Source is either `'receipt-scan'` or `'manual'`.
+- **`export_jobs`** / **`generated_documents`** — tracks the LHDN export pack and its generated files.
 
 **Conventions:**
 
 - All money fields are `INTEGER` cents — avoids float drift in aggregations and scorecard math.
-- All timestamps are `TIMESTAMPTZ NOT NULL DEFAULT NOW()`.
+- Persisted timestamps use `TIMESTAMPTZ`; lifecycle fields such as `paid_at`, `completed_at`, `generated_at`, and review timestamps may remain null until that state is reached.
 - `BIGSERIAL` primary keys. No UUIDs unless the demo needs offline-generated IDs (e.g. offline POS queue).
 
 ### 5e. Key flows
@@ -287,8 +291,9 @@ From `api/`, use the `pg` npm package (or `postgres` / Kysely if you want a thin
 
 ```
 web  → POST api/v1/menu/parse { transcript }
-api  → POST ai/v1/parse-menu  { transcript }  →  { items }
-api  → INSERT menu_items; return { items }
+api  → POST ai/v1/parse-menu  { transcript }  →  { draft items }
+api  validates suggested code values, applies defaults (e.g. color, display order, fallback category), and INSERTs menu_items
+api  returns saved items to web
 web  renders the POS grid
 ```
 
@@ -296,11 +301,11 @@ web  renders the POS grid
 
 ```
 web  → POST api/v1/orders { items: [{ menuItemId, qty }] }
-api  computes total, generates dummy DuitNow payload, INSERT orders + order_items
-api  → 200 { orderId, qrPayload, totalCents }
+api  computes subtotal + tax + total, generates dummy DuitNow payload, INSERT orders + order_items snapshots
+api  → 200 { orderId, subtotalCents, taxCents, totalCents, qrPayload }
 web  renders QR
 (judge scans → dummy success page) web → POST api/v1/orders/:id/paid
-api  UPDATE orders SET paid_at = unixepoch()
+api  UPDATE orders SET paid_at = NOW()
 web  shows "Paid" screen
 ```
 
@@ -308,9 +313,10 @@ web  shows "Paid" screen
 
 ```
 web  → POST api/v1/ask { question: "Bulan ni hari apa paling slow?" }
-api  → POST ai/v1/text-to-sql { question, schema }  →  { sql, explanation }
-api  validates SQL is SELECT-only, runs it against the DB
-api  → 200 { sql, rows, answer }
+api  resolves merchantId + timeZone and forwards them to ai/v1/ask
+ai   runs merchant-scoped read queries using read-only DB credentials
+ai   → { answer, evidence, queries? }
+api  → 200 { answer, evidence }
 ```
 
 **Credit application (features 4 + 5)**
@@ -321,13 +327,32 @@ web  → POST api/v1/credit/apply
 api  bundles { scorecard, 3-month P&L } and returns a fake approval
 ```
 
-### 5f. Why `ai/` never touches the DB
+**LHDN export pack (feature 4)**
 
-For text-to-SQL, `api/` sends the schema in the request; `ai/` returns a SQL string; `api/` executes it. Three reasons:
+```
+web  → POST api/v1/exports/lhdn { from, to }
+api  creates export_job, validates included order-item snapshots, generates 4 artifacts
+api  uploads files, INSERTs generated_documents, marks job generated
+api  → 201 { exportJobId, documents[] }
+web  renders the export pack download/result screen
+```
 
-- Keeps `ai/` stateless and swappable (swap LLM providers without migrations).
-- Keeps auth/tenant logic out of Python — per §2 golden rule, those belong in the BFF.
-- Lets `api/` enforce a SELECT-only guardrail before executing anything the LLM produced.
+### 5f. Why `ai/` gets read-only DB access for chat
+
+For conversational analytics, `ai/` is allowed to read merchant-scoped data directly. This is a deliberate architecture change from pure text-to-SQL.
+
+Guardrails:
+
+- `api/` still authenticates the merchant and remains the only public boundary.
+- `ai/` gets separate read-only DB credentials, never write credentials.
+- Merchant scoping must be enforced outside the model through query helpers, views, or parameter injection.
+- Query timeouts, row limits, and query-count limits must be enforced.
+
+Why this split still works:
+
+- `ai/` can answer multi-step questions without bouncing raw SQL back to `api/`.
+- `api/` still owns writes, exports, payments, and deterministic finance calculations.
+- Auth and tenant identity still live in the BFF, not in the browser and not in end-user prompts.
 
 ### 5g. AWS service map
 
@@ -335,10 +360,10 @@ Region: **`ap-southeast-1`** (Singapore) — lowest latency from KL, all service
 
 | Concern       | AWS service                                        | Used by         | Purpose                                                                |
 | ------------- | -------------------------------------------------- | --------------- | ---------------------------------------------------------------------- |
-| Relational DB | **RDS for PostgreSQL** (`db.t4g.micro`, free tier) | `api/`          | Source of truth — menu, orders, order_items, expenses                  |
-| File storage  | **S3**                                             | `api/`          | Generated LHDN e-Invoice PDFs; receipt images before/after OCR         |
-| LLM           | **Bedrock** (Claude Haiku — fast + cheap enough)   | `ai/`           | Parse menu (§5e flow 1); text-to-SQL for BM chat (§5e flow 3)          |
-| Receipt OCR   | **Textract** (optional)                            | `api/` or `ai/` | Scorecard diligence component — only if demoing the receipt-scan flow  |
+| Relational DB | **RDS for PostgreSQL** (`db.t4g.micro`, free tier) | `api/`, `ai/` (read-only for chat) | Source of truth — menu, orders, order_items, expenses, export metadata |
+| File storage  | **S3**                                             | `api/`          | Generated LHDN export-pack documents; receipt images before/after OCR  |
+| LLM           | **Bedrock** (Claude Haiku — fast + cheap enough)   | `ai/`           | Parse menu (§5e flow 1); conversational reasoning for BM chat (§5e flow 3) |
+| Receipt OCR   | **Textract** (optional)                            | `api/` or `ai/` | Optional expense-capture aid; not required by the current diligence formula |
 | Secrets       | env vars for the hackathon; Secrets Manager later  | `api/`, `ai/`   | DB password, AWS creds                                                 |
 
 **What we deliberately skip:**
@@ -359,7 +384,7 @@ Region: **`ap-southeast-1`** (Singapore) — lowest latency from KL, all service
 **IAM (minimal):**
 
 - `api/` needs: `s3:PutObject` + `s3:GetObject` on the bucket; RDS via username/password in `DATABASE_URL` (no IAM auth required).
-- `ai/` needs: `bedrock:InvokeModel`; add `textract:DetectDocumentText` / `textract:AnalyzeExpense` if OCR lives in `ai/` instead of `api/`.
+- `ai/` needs: `bedrock:InvokeModel` plus a read-only `DATABASE_READ_URL`; add `textract:DetectDocumentText` / `textract:AnalyzeExpense` if OCR lives in `ai/` instead of `api/`.
 - Local dev → IAM user access keys in `~/.aws/credentials`. Deployed → task/instance role, never bake keys into images.
 
 ---

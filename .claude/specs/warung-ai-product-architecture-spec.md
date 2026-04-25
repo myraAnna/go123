@@ -79,6 +79,7 @@ AI-powered:
 
 - Menu transcript parsing
 - Conversational analytics reasoning over merchant-scoped data and AI-owned session history
+- Suggested follow-up questions for analytics chat
 
 Deterministic:
 
@@ -100,17 +101,19 @@ This section clarifies, for every `api -> ai` call, which fields are:
 
 There is no PostgreSQL HTTP endpoint surface. `ai/` reads PostgreSQL directly through its merchant-scoped read-only DB access.
 
-#### `api -> ai POST /v1/parse-menu`
+#### `api -> ai POST /v1/onboarding/extract-menu`
 
 Fields sent to `ai/`:
 
-- `transcript`
+- optional `text`
+- optional `files[]` where each file is an uploaded image or PDF authorized by `api/`
+- `api/` uses both `text` and `files[]` when both are provided
 
 Fields produced by `ai/`:
 
 - `items[].name`
 - `items[].priceCents`
-- optional draft suggestions only:
+Optional draft suggestions only:
 - `items[].category`
 - `items[].unitCode`
 - `items[].classificationCode`
@@ -119,11 +122,11 @@ Fields produced by `ai/`:
 - `items[].taxRatePct`
 - `items[].taxPerUnitCents`
 - `items[].taxExemptionReason`
-- `items[].reviewRequired`
 
 Fields not produced by `ai/` and instead assigned or derived by `api/`:
 
 - `items[].id`
+- backend-computed review flags for missing compliance fields
 - `items[].color`
 - `items[].displayOrder`
 - fallback `items[].category = 'other'` when needed
@@ -169,7 +172,7 @@ Fields not produced by `ai/` and instead checked by `api/` before forwarding:
 - merchant/session authorization using `chat_sessions.merchant_id`
 - session status validation using `chat_sessions.status`
 
-#### `api -> ai POST /v1/ask`
+#### `api -> ai POST /v1/chat/ask`
 
 Fields sent to `ai/`:
 
@@ -195,6 +198,28 @@ Fields not produced by `ai/` and instead updated or enforced by `api/`:
 - session status validation using `chat_sessions.status`
 - `chat_sessions.last_message_at`
 
+#### `api -> ai POST /v1/chat/suggest-questions`
+
+Fields sent to `ai/`:
+
+- `sessionId`
+- `merchantId`
+- `timeZone`
+
+Fields loaded internally by `ai/`, not sent by `api/`:
+
+- prior conversation history from the AI-owned session store
+- merchant-scoped analytical data from PostgreSQL using read-only access
+
+Fields produced by `ai/`:
+
+- `suggestedQuestions[]`
+
+Fields not produced by `ai/` and instead enforced by `api/`:
+
+- merchant/session authorization using `chat_sessions.merchant_id`
+- session status validation using `chat_sessions.status`
+
 #### Rule summary
 
 - `merchantId` is always resolved by `api/`, never trusted from `web/`
@@ -205,17 +230,25 @@ Fields not produced by `ai/` and instead updated or enforced by `api/`:
 
 ## 4. Core Flows
 
-### 4.1 Menu onboarding
+### 4.1 File upload and retrieval
 
-1. `web` sends transcript to `api`
-2. `api` calls `ai /v1/parse-menu`
+1. `web` calls `POST /v1/files`
+2. `api` creates an `uploaded_file` record and returns an S3 upload target
+3. Client uploads the file to S3
+4. `web` later calls `GET /v1/files/:id`
+5. `api` returns file metadata plus a retrievable S3 URL
+
+### 4.2 Menu onboarding
+
+1. `web` sends optional `text` and optional `fileIds[]` to `POST /v1/menu/parse`
+2. `api` calls `ai /v1/onboarding/extract-menu`
 3. `ai` returns item drafts
-4. `api` validates restricted values, assigns UI defaults, persists `menu_items`
+4. `api` validates restricted values, computes backend-owned review state/UI fields, and persists `menu_items`
 5. Merchant reviews and edits through `POST /v1/menu`
 
 `parse-menu` is stateless. It must not create or depend on any chat session.
 
-### 4.2 POS order and simulated payment
+### 4.3 POS order and simulated payment
 
 1. Merchant selects items and quantities
 2. `api` computes subtotal, tax, total
@@ -224,7 +257,7 @@ Fields not produced by `ai/` and instead updated or enforced by `api/`:
 5. Success flow calls `POST /v1/orders/:id/paid`
 6. `api` sets `paid_at`
 
-### 4.3 Chat session creation
+### 4.4 Chat session creation
 
 1. `web` calls `POST /v1/chat/sessions`
 2. `api` resolves trusted `merchantId`
@@ -233,19 +266,19 @@ Fields not produced by `ai/` and instead updated or enforced by `api/`:
 5. `api` inserts `chat_sessions` bound to that merchant and `sessionId`
 6. `api` returns `sessionId`
 
-### 4.4 Conversational analytics turn
+### 4.5 Conversational analytics turn
 
 1. `web` sends a message to `POST /v1/chat/sessions/:id/messages`
 2. `api` resolves trusted `merchantId`
 3. `api` loads the session and rejects cross-merchant access
-4. `api` calls `ai /v1/ask` with `merchantId`, `sessionId`, `timeZone`, and current question
+4. `api` calls `ai /v1/chat/ask` with `merchantId`, `sessionId`, `timeZone`, and current question
 5. `ai` loads prior messages from its own session store
 6. `ai` uses `merchantId` for merchant-scoped read-only DB access
 7. `ai` runs read-only queries, appends the new turn to its own session store, and generates the answer
 8. `api` updates `chat_sessions.last_message_at`
 9. `api` returns the answer and evidence to `web`
 
-### 4.5 Conversation retrieval
+### 4.6 Conversation retrieval
 
 1. `web` calls `GET /v1/chat/sessions/:id/messages`
 2. `api` resolves trusted `merchantId`
@@ -254,7 +287,16 @@ Fields not produced by `ai/` and instead updated or enforced by `api/`:
 5. `ai` loads stored messages from its own session store
 6. `api` returns the ordered conversation to `web`
 
-### 4.6 LHDN export pack
+### 4.7 Suggested questions
+
+1. `web` calls `GET /v1/chat/sessions/:id/suggested-questions`
+2. `api` resolves trusted `merchantId`
+3. `api` loads the session and rejects cross-merchant access
+4. `api` calls `ai /v1/chat/suggest-questions` with `merchantId`, `sessionId`, and `timeZone`
+5. `ai` inspects session history plus merchant-scoped data and returns suggested follow-up questions
+6. `api` returns the suggestions to `web`
+
+### 4.8 LHDN export pack
 
 1. `web` calls `POST /v1/exports/lhdn { from, to }`
 2. `api` creates `export_job`
@@ -268,7 +310,7 @@ Fields not produced by `ai/` and instead updated or enforced by `api/`:
 6. `api` uploads files to S3
 7. `api` returns export-pack summary
 
-### 4.7 Credit application
+### 4.9 Credit application
 
 1. `web` calls `POST /v1/credit/apply`
 2. `api` computes scorecard from DB
@@ -328,6 +370,23 @@ Fields not produced by `ai/` and instead updated or enforced by `api/`:
 #### `generated_documents.storage_provider`
 
 - `s3`
+
+#### `uploaded_files.purpose`
+
+- `menu-parse`
+- `merchant-onboarding`
+- `expense-receipt`
+- `other`
+
+#### `uploaded_files.storage_provider`
+
+- `s3`
+
+#### `uploaded_files.upload_status`
+
+- `pending_upload`
+- `uploaded`
+- `failed`
 
 #### `chat_sessions.status`
 
@@ -704,7 +763,39 @@ Indexes:
 
 - `(merchant_id, expense_date DESC)`
 
-### 7.7 `chat_sessions`
+### 7.7 `uploaded_files`
+
+| Column | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | BIGSERIAL PK | yes | |
+| `merchant_id` | BIGINT FK | yes | -> `merchants.id` |
+| `purpose` | TEXT | yes | `menu-parse` / `merchant-onboarding` / `expense-receipt` / `other` |
+| `original_file_name` | TEXT | yes | |
+| `mime_type` | TEXT | yes | image or PDF for onboarding flows |
+| `file_size_bytes` | BIGINT | no | |
+| `storage_provider` | TEXT | yes | `s3` |
+| `storage_key` | TEXT | yes | unique object key |
+| `upload_status` | TEXT | yes | `pending_upload` / `uploaded` / `failed` |
+| `created_at` | TIMESTAMPTZ | yes | default `NOW()` |
+| `updated_at` | TIMESTAMPTZ | yes | default `NOW()` |
+
+Constraints:
+
+- `purpose IN ('menu-parse', 'merchant-onboarding', 'expense-receipt', 'other')`
+- `storage_provider = 's3'`
+- `upload_status IN ('pending_upload', 'uploaded', 'failed')`
+- `file_size_bytes IS NULL OR file_size_bytes > 0`
+
+Indexes:
+
+- unique `storage_key`
+- `(merchant_id, purpose, created_at DESC)`
+
+Rule:
+
+- `uploaded_files` is the canonical metadata table for files uploaded to S3 and later referenced by onboarding or receipt flows
+
+### 7.8 `chat_sessions`
 
 | Column | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -731,7 +822,7 @@ Rule:
 - `chat_sessions` is the API-owned merchant/session binding used to authorize chat continuation
 - `ai_session_id` is the canonical session identifier returned to `web/` and forwarded back to `ai/`
 
-### 7.8 `export_jobs`
+### 7.9 `export_jobs`
 
 | Column | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -756,7 +847,7 @@ Indexes:
 
 - `(merchant_id, created_at DESC)`
 
-### 7.9 `generated_documents`
+### 7.10 `generated_documents`
 
 | Column | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -787,18 +878,28 @@ Indexes:
 
 ## 8. Core Business Logic
 
-### 8.1 Menu parsing and review
+### 8.1 File-backed onboarding inputs
 
-- `POST /v1/menu/parse` and `ai /v1/parse-menu` are stateless
+- `POST /v1/files` is used before any onboarding flow that relies on images or PDFs
+- onboarding inputs may include `text`, `fileIds[]`, or both
+- when both are provided, `api/` forwards both to `ai/`
+- only files with `upload_status = 'uploaded'` may be forwarded to `ai/`
+- uploaded file authorization is merchant-scoped through `uploaded_files.merchant_id`
+
+### 8.2 Menu parsing and review
+
+- `POST /v1/menu/parse` and `ai /v1/onboarding/extract-menu` are stateless
+- `POST /v1/menu/parse` accepts `text`, `fileIds[]`, or both
 - AI must treat compliance-like metadata as draft suggestions, not truth
 - AI must emit restricted **codes**, not human labels, for fields such as `unitCode`, `classificationCode`, `taxCode`, `stateCode`, and `msicCode`
 - If AI cannot infer a credible restricted value, omit it rather than inventing a code
 - `api` assigns UI defaults such as `color`, `display_order`, fallback `category`
 - Items created through AI onboarding default to `compliance_review_status = 'pending_review'`
+- review-required flags are derived by `api/`, not by `ai/`
 - Merchant review through menu editing may transition item to `reviewed`
 - Formal exports should only rely on reviewed compliance metadata or reviewed sale-time snapshots
 
-### 8.2 Order pricing and tax semantics
+### 8.3 Order pricing and tax semantics
 
 - `menu_items.price_cents` and `order_items.unit_price_cents` are tax-exclusive prices
 - `orders.subtotal_cents` is the sum of tax-exclusive line subtotals
@@ -806,7 +907,7 @@ Indexes:
 - `orders.total_cents` is the payable QR amount
 - When fractional quantity multiplies a cent-denominated integer value, round the line-level money result to nearest cent before summing
 
-### 8.3 Order creation
+### 8.4 Order creation
 
 On `POST /v1/orders`:
 
@@ -818,34 +919,35 @@ On `POST /v1/orders`:
 6. Generate dummy `qr_payload`
 7. Insert `orders` and `order_items`
 
-### 8.4 Payment completion
+### 8.5 Payment completion
 
 - `POST /v1/orders/:id/paid` is idempotent
 - If `paid_at` already exists, return original value
 - Finance/reporting must use `paid_at`, not `created_at`
 
-### 8.5 Dashboard semantics
+### 8.6 Dashboard semantics
 
 - Order/card `totalCents` is gross payable amount
 - Item/trend/heatmap `revenueCents` is tax-exclusive merchandise revenue
 
-### 8.6 Chatbot rules
+### 8.7 Chatbot rules
 
 - `api` authenticates merchant and forwards trusted merchant context
 - `api` owns chat session creation and merchant/session binding persistence
 - `web/` never sends DB credentials or a merchant-scoping token directly to `ai/`
 - `merchantId` supplied by `api/` is the scoping input that `ai/` uses for merchant-limited read access
-- `POST /v1/chat/sessions` creates the session; `GET /v1/chat/sessions/:id/messages` fetches it; `POST /v1/chat/sessions/:id/messages` continues it
+- `POST /v1/chat/sessions` creates the session; `GET /v1/chat/sessions/:id/messages` fetches it; `POST /v1/chat/sessions/:id/messages` continues it; `GET /v1/chat/sessions/:id/suggested-questions` suggests next questions
 - `api` must reject any session lookup where `chat_sessions.merchant_id` does not match the authenticated merchant
 - `api` does not persist or replay prior chat messages
 - `ai` owns session history and loads prior messages using `sessionId`
 - `ai` uses the shared PostgreSQL instance only through merchant-scoped read-only access
 - Shared merchant data remains API-owned even when `ai` reads it directly
 - `ai` may write only to its own session store, never to the shared merchant PostgreSQL data store
+- suggested questions are generated by `ai/` from session context plus merchant-scoped data
 - Query limits, row limits, and timeouts must be enforced
 - Prefer parameterized helpers or merchant-scoped views over unconstrained free-form SQL
 
-### 8.7 Export validation rules
+### 8.8 Export validation rules
 
 LHDN export generation must fail if:
 
@@ -853,7 +955,7 @@ LHDN export generation must fail if:
 - required export range is invalid
 - required merchant profile fields are incomplete
 
-### 8.8 Merchant profile completeness rule
+### 8.9 Merchant profile completeness rule
 
 `profile_complete = 1` only when these are populated:
 
@@ -874,7 +976,7 @@ LHDN export generation must fail if:
 
 Else `profile_complete = 0`.
 
-### 8.9 Scorecard formulas
+### 8.10 Scorecard formulas
 
 #### Stability
 
@@ -1092,14 +1194,17 @@ Recommended representation per document:
 9. `orders`
 10. `order_items`
 11. `expenses`
-12. `chat_sessions`
-13. `export_jobs`
-14. `generated_documents`
+12. `uploaded_files`
+13. `chat_sessions`
+14. `export_jobs`
+15. `generated_documents`
 
 ## 12. Key API Surface
 
 `api/`:
 
+- `POST /v1/files`
+- `GET /v1/files/:id`
 - `POST /v1/menu/parse`
 - `GET /v1/menu`
 - `POST /v1/menu`
@@ -1110,6 +1215,7 @@ Recommended representation per document:
 - `GET /v1/stats/growth`
 - `POST /v1/chat/sessions`
 - `GET /v1/chat/sessions/:id/messages`
+- `GET /v1/chat/sessions/:id/suggested-questions`
 - `POST /v1/chat/sessions/:id/messages`
 - `GET /v1/scorecard`
 - `POST /v1/exports/lhdn`
@@ -1120,8 +1226,9 @@ Recommended representation per document:
 
 - `POST /v1/chat/sessions`
 - `GET /v1/chat/sessions/:id/messages`
-- `POST /v1/parse-menu`
-- `POST /v1/ask`
+- `POST /v1/chat/suggest-questions`
+- `POST /v1/onboarding/extract-menu`
+- `POST /v1/chat/ask`
 - `POST /v1/anomaly` (optional)
 - `GET /health`
 

@@ -1,0 +1,15 @@
+You are routing a merchant analytics question to one supported analytics intent.
+
+Supported intents:
+$catalog
+
+Use the prior messages only for disambiguation.
+
+Question:
+$question
+
+Prior messages:
+$prior_messages
+
+Return strict JSON only in this shape:
+{"intent": "<supported intent name or unsupported>"}

@@ -1,4 +1,10 @@
-.PHONY: help setup install dev-web dev-api dev-ai docker-up docker-down clean
+.PHONY: help check-bun check-uv setup install dev-web dev-api dev-ai docker-up docker-down clean
+
+check-bun:
+	@command -v bun >/dev/null 2>&1 || (echo "Error: bun is not installed. Install it from https://bun.sh" && exit 1)
+
+check-uv:
+	@command -v uv >/dev/null 2>&1 || (echo "Error: uv is not installed. Install it with 'brew install uv' or from https://docs.astral.sh/uv/" && exit 1)
 
 # Default target
 help:
@@ -20,7 +26,7 @@ help:
 	@echo "  make clean      - Remove build artifacts"
 
 # Setup
-setup:
+setup: check-bun check-uv
 	@echo "🚀 Setting up Warung AI..."
 	@if [ ! -f .env ]; then \
 		cp .env.example .env; \
@@ -92,15 +98,15 @@ clean-all: clean
 	@echo "Full clean complete"
 
 # Development
-dev-web:
+dev-web: check-bun
 	@echo "Starting web development server on :3000"
 	cd web && bun run dev
 
-dev-api:
+dev-api: check-bun
 	@echo "Starting API development server on :3001"
 	cd api && bun run dev
 
-dev-ai:
+dev-ai: check-uv
 	@echo "Starting AI development server on :8001"
 	cd ai && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8001
 

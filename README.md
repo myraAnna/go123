@@ -4,15 +4,35 @@ AI-powered POS for Malaysian micro-merchants
 
 ## Prerequisites
 
-**Install Make first** (required for all commands below):
+Install these tools first:
+
+- `make`
+- `bun`
+- `uv`
+- `python3.13`
+
+**Install Make on macOS:**
 
 ```bash
 xcode-select --install  # Includes make
 ```
 
+**Install Bun:**
+```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
+**Install uv:**
+```bash
+brew install uv
+```
+
 **Verify installation:**
 ```bash
 make --version  # Should show GNU Make 4.x or later
+bun --version
+uv --version
+python3.13 --version
 ```
 
 **Don't know how to set up?** Just ask Claude Code:
@@ -33,6 +53,8 @@ This will:
 - Create `.env` from example
 - Install all dependencies (web, api, ai)
 - Ready to develop!
+
+If `make setup` or `make dev-ai` fails with `uv: command not found`, install `uv` first and rerun the command.
 
 ## Development (Pick Your Service)
 
@@ -95,3 +117,5 @@ This project is optimized for AI-assisted development:
 - `CLAUDE.md` → AI assistant guide
 - `.claude/specs/` → Original API contracts & architecture files
 - Service guides: `web/AGENTS.md`, `api/AGENTS.md`, `ai/AGENTS.md`
+
+aws ap-southeast 1, 5 (msia)

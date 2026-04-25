@@ -1,0 +1,19 @@
+Extract menu items from the merchant transcript and any attached menu files.
+
+Transcript:
+$transcript
+
+Extract only these fields for each item:
+
+- `name`
+- `priceCents`
+- optional `category`
+- optional `description`
+
+Rules:
+- Preserve merchant wording for item names with only light cleanup.
+- `priceCents` must be a positive integer.
+- `category` may be `main`, `side`, `drink`, `dessert`, or `other`.
+- Omit optional fields when not supported by the input.
+- Do not include fields outside the response schema.
+- If you cannot find any valid items, return an empty `items` list.
