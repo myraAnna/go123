@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { authMiddleware } from './middleware/auth.js';
 import { onboardingRouter } from './routes/onboarding.js';
 import { aiMockRouter } from './routes/ai-mock.js';
+import { merchantsRouter } from './routes/merchants.js';
 
 const app = new Hono();
 
@@ -17,6 +18,7 @@ app.get('/health', (c) => {
 });
 
 app.route('/v1/onboarding', onboardingRouter);
+app.route('/v1/merchants', merchantsRouter);
 app.route('/_ai', aiMockRouter);
 
 const port = parseInt(process.env.PORT || '3001', 10);
