@@ -300,6 +300,7 @@ Response `200`:
 
 - `bucket` field at top level echoes the resolved bucket so the frontend doesn't need to recompute.
 - Each point's `bucket` is the first day of that bucket in MYT, formatted `YYYY-MM-DD`.
+- Unknown `bucket` values fall back to `auto` (no `400`).
 
 #### `GET /v1/stats/heatmap`
 
@@ -315,6 +316,8 @@ Response `200`:
   ]
 }
 ```
+
+- Sparse — only cells with at least one paid order are returned. The frontend should render missing cells as zero.
 
 ### 3.4 Chat
 
