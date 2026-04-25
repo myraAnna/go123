@@ -286,7 +286,10 @@ export default function ChatPage() {
           <Bot size={22} color="#4F6FF0" />
           <span className="text-[11px] font-semibold text-[#4F6FF0]">Ask AI</span>
         </button>
-        <button className="flex-1 flex flex-col items-center justify-center gap-[3px]">
+        <button
+          onClick={() => router.push("/warung-ai/analytics")}
+          className="flex-1 flex flex-col items-center justify-center gap-[3px]"
+        >
           <TrendingUp size={22} color="#9CA3AF" />
           <span className="text-[11px] text-[#9CA3AF]">Analytics</span>
         </button>

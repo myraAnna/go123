@@ -366,7 +366,10 @@ export default function POSPage() {
             <Bot className="w-[22px] h-[22px] text-[#9CA3AF]" />
             <span className="text-[11px] text-[#9CA3AF]">Ask AI</span>
           </button>
-          <button className="flex-1 flex flex-col items-center justify-center gap-0.5">
+          <button
+            className="flex-1 flex flex-col items-center justify-center gap-0.5"
+            onClick={() => router.push("/warung-ai/analytics")}
+          >
             <TrendingUp className="w-[22px] h-[22px] text-[#9CA3AF]" />
             <span className="text-[11px] text-[#9CA3AF]">Analytics</span>
           </button>
