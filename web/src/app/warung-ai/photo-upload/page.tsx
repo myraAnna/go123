@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { ImagePlus, Camera, Sparkles, RefreshCw, Loader2, AlertCircle } from "lucide-react";
 import { StatusBar } from "@/components/services/StatusBar";
@@ -8,6 +9,7 @@ import { PageNav } from "@/components/warung-ai/PageNav";
 import { uploadOnboardingImage, ApiError } from "@/queries/onboarding";
 
 export default function PhotoUploadPage() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -40,8 +42,7 @@ export default function PhotoUploadPage() {
     try {
       const items = await uploadOnboardingImage(file);
       sessionStorage.setItem("warungAi.draftItems", JSON.stringify(items));
-      // TODO: router.push("/warung-ai/menu-verify") once verify page exists
-      console.log("AI draft items:", items);
+      router.push("/warung-ai/menu-verify");
     } catch (err) {
       if (err instanceof ApiError) {
         setError(

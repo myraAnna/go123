@@ -60,3 +60,22 @@ export async function fetchOnboardingMenu(): Promise<MenuItem[]> {
   const data = (await res.json()) as { items: MenuItem[] };
   return data.items;
 }
+
+export type VerifyResult = {
+  items: MenuItem[];
+  skippedCount: number;
+};
+
+export async function verifyOnboardingMenu(
+  items: { name: string; priceCents: number; category: string }[],
+): Promise<VerifyResult> {
+  const res = await fetch(`${API_BASE}/v1/onboarding/menu/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+
+  if (!res.ok) throw new ApiError(res.status);
+
+  return (await res.json()) as VerifyResult;
+}
