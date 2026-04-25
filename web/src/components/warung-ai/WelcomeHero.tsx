@@ -11,7 +11,7 @@ export function WelcomeHero() {
       </div>
 
       {/* Title */}
-      <h1 className="text-white text-[32px] font-bold leading-tight">Warung AI</h1>
+      <h1 className="text-white text-[32px] font-bold leading-tight">EzWarung</h1>
 
       {/* Subtitle */}
       <p className="text-[#BBDEFB] text-base text-center leading-relaxed max-w-[280px]">

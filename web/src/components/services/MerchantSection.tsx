@@ -13,7 +13,7 @@ const row1: { icon: React.ElementType; label: string; bg: string }[] = [
 ];
 
 const row2: { icon: React.ElementType; label: string; bg: string; href?: string }[] = [
-  { icon: Bot, label: "Warung AI", bg: "#EDE7F6", href: "/warung-ai" },
+  { icon: Bot, label: "EzWarung", bg: "#EDE7F6", href: "/warung-ai" },
 ];
 
 function MerchantIcon({

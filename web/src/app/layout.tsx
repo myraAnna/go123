@@ -8,7 +8,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Warung AI",
+  title: "EzWarung",
   description: "AI-powered POS for Malaysian micro-merchants",
 };
 
