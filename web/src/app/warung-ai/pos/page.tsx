@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { StatusBar } from "@/components/services/StatusBar";
 import { fetchOnboardingMenu, type MenuItem } from "@/queries/onboarding";
+import { createOrder } from "@/queries/orders";
 
 type Category = "all" | "main" | "side" | "drink" | "dessert" | "other";
 
@@ -56,6 +57,8 @@ export default function POSPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<Category>("all");
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const addToCart = (id: string) =>
     setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
@@ -113,6 +116,27 @@ export default function POSPage() {
 
   const isEmpty = !loading && !error && (items?.length ?? 0) === 0;
   const hasItems = !loading && !error && (items?.length ?? 0) > 0;
+
+  const handleProcessPayment = async () => {
+    if (!items || submitting) return;
+    const payload = Object.entries(cart)
+      .filter(([, qty]) => qty > 0)
+      .map(([menuItemId, qty]) => ({ menuItemId, qty }));
+    if (payload.length === 0) return;
+
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const order = await createOrder(payload);
+      try {
+        sessionStorage.setItem("warung-ai:order", JSON.stringify(order));
+      } catch {}
+      router.push("/warung-ai/qr-payment");
+    } catch {
+      setSubmitError("Couldn't create order. Try again.");
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
@@ -304,9 +328,28 @@ export default function POSPage() {
                 {formatRM(cartTotals.cents)}
               </span>
             </div>
-            <button className="w-full h-12 rounded-[24px] bg-[#2563EB] text-white text-[15px] font-bold flex items-center justify-center gap-2">
-              Process Payment <span aria-hidden>→</span>
+            <button
+              onClick={handleProcessPayment}
+              disabled={submitting}
+              className="w-full h-12 rounded-[24px] bg-[#2563EB] text-white text-[15px] font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processing…
+                </>
+              ) : (
+                <>
+                  Process Payment <span aria-hidden>→</span>
+                </>
+              )}
             </button>
+            {submitError && (
+              <div className="mt-2 flex items-start gap-2 text-[#B91C1C] text-[12px]">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span>{submitError}</span>
+              </div>
+            )}
           </div>
         )}
 
