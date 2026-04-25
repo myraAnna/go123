@@ -212,3 +212,81 @@ statsRouter.get('/top-items', async (c) => {
     worst: worst.map(shape),
   });
 });
+
+type Bucket = 'day' | 'week' | 'month';
+
+const BUCKET_VALUES: Bucket[] = ['day', 'week', 'month'];
+
+const parseBucket = (raw: string | undefined, periodDays: number): Bucket => {
+  if (raw === 'auto' || raw === undefined) {
+    if (periodDays <= 14) return 'day';
+    if (periodDays <= 90) return 'week';
+    return 'month';
+  }
+  if ((BUCKET_VALUES as string[]).includes(raw)) return raw as Bucket;
+  // Unknown value — fall back to auto.
+  if (periodDays <= 14) return 'day';
+  if (periodDays <= 90) return 'week';
+  return 'month';
+};
+
+const BUCKET_INTERVAL: Record<Bucket, string> = {
+  day:   '1 day',
+  week:  '1 week',
+  month: '1 month',
+};
+
+type TrendRow = { bucket: string; revenue_cents: number; order_count: number };
+
+// GET /v1/stats/trend?since=&until=&bucket=day|week|month|auto
+statsRouter.get('/trend', async (c) => {
+  const merchantId = c.get('merchantId');
+
+  const parsed = parseWindow(c.req.query('since'), c.req.query('until'));
+  if ('error' in parsed) return c.json({ error: parsed.error }, 400);
+  const { since, until } = parsed.window;
+
+  const periodDays = Math.ceil((until.getTime() - since.getTime()) / (24 * 60 * 60 * 1000));
+  const bucket = parseBucket(c.req.query('bucket'), periodDays);
+  const interval = BUCKET_INTERVAL[bucket];
+
+  const rows = await db<TrendRow[]>`
+    WITH series AS (
+      SELECT to_char(s, 'YYYY-MM-DD') AS bucket
+      FROM generate_series(
+        date_trunc(${bucket}, ${since}::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur'),
+        date_trunc(${bucket}, ${until}::timestamptz AT TIME ZONE 'Asia/Kuala_Lumpur'),
+        ${interval}::interval
+      ) AS s
+    ),
+    agg AS (
+      SELECT to_char(
+               date_trunc(${bucket}, paid_at AT TIME ZONE 'Asia/Kuala_Lumpur'),
+               'YYYY-MM-DD'
+             )                              AS bucket,
+             SUM(total_cents)::int          AS revenue_cents,
+             COUNT(*)::int                  AS order_count
+      FROM orders
+      WHERE merchant_id = ${merchantId}
+        AND paid_at IS NOT NULL
+        AND paid_at >= ${since}
+        AND paid_at <  ${until}
+      GROUP BY 1
+    )
+    SELECT s.bucket,
+           COALESCE(a.revenue_cents, 0) AS revenue_cents,
+           COALESCE(a.order_count, 0)   AS order_count
+    FROM series s
+    LEFT JOIN agg a USING (bucket)
+    ORDER BY s.bucket
+  `;
+
+  return c.json({
+    bucket,
+    points: rows.map((r) => ({
+      bucket: r.bucket,
+      revenueCents: r.revenue_cents,
+      orderCount: r.order_count,
+    })),
+  });
+});
