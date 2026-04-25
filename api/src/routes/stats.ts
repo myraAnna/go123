@@ -30,8 +30,65 @@ function parseWindow(sinceParam: string | undefined, untilParam: string | undefi
   return { window: { since, until } };
 }
 
-// Suppress unused-import warning until first handler lands.
-void db;
+type RevenueRow = { revenue_cents: number; order_count: number };
 
-// GET /v1/stats/_ping — temporary, removed after Task 2 lands.
-statsRouter.get('/_ping', (c) => c.json({ ok: true }));
+async function fetchRevenue(merchantId: string, since: Date, until: Date): Promise<RevenueRow> {
+  const [row] = await db<RevenueRow[]>`
+    SELECT COALESCE(SUM(total_cents), 0)::int AS revenue_cents,
+           COUNT(*)::int                       AS order_count
+    FROM orders
+    WHERE merchant_id = ${merchantId}
+      AND paid_at IS NOT NULL
+      AND paid_at >= ${since}
+      AND paid_at <  ${until}
+  `;
+  return row;
+}
+
+const pctChange = (curr: number, prev: number): number | null => {
+  if (prev === 0) return null;
+  return Math.round(((curr - prev) / prev) * 1000) / 10; // one decimal place
+};
+
+// GET /v1/stats/summary?since=&until=&compare=true
+statsRouter.get('/summary', async (c) => {
+  const merchantId = c.get('merchantId');
+
+  const parsed = parseWindow(c.req.query('since'), c.req.query('until'));
+  if ('error' in parsed) return c.json({ error: parsed.error }, 400);
+  const { since, until } = parsed.window;
+
+  const compare = c.req.query('compare') === 'true';
+
+  const current = await fetchRevenue(merchantId, since, until);
+
+  const periodMs = until.getTime() - since.getTime();
+  const periodDays = Math.ceil(periodMs / (24 * 60 * 60 * 1000));
+  const aov = current.order_count === 0
+    ? 0
+    : Math.round(current.revenue_cents / current.order_count);
+
+  let comparePrevious: { revenueChangePct: number | null; orderCountChangePct: number | null } | null = null;
+
+  if (compare) {
+    const prevUntil = since;
+    const prevSince = new Date(prevUntil.getTime() - periodMs);
+    const prev = await fetchRevenue(merchantId, prevSince, prevUntil);
+    if (prev.order_count === 0 && prev.revenue_cents === 0) {
+      comparePrevious = null;
+    } else {
+      comparePrevious = {
+        revenueChangePct: pctChange(current.revenue_cents, prev.revenue_cents),
+        orderCountChangePct: pctChange(current.order_count, prev.order_count),
+      };
+    }
+  }
+
+  return c.json({
+    revenueCents: current.revenue_cents,
+    orderCount: current.order_count,
+    averageOrderValueCents: aov,
+    periodDays,
+    comparePrevious,
+  });
+});
