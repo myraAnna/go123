@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { db } from '../db/index.js';
-import { sendEmail } from '../clients/mailjet.js';
 
 export const ordersRouter = new Hono();
 
