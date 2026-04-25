@@ -45,7 +45,8 @@ web/ (Next.js) -> api/ (Hono BFF) -> ai/ (FastAPI)
                         +-> PostgreSQL
                         +-> S3
 
-ai/ also has merchant-scoped read-only PostgreSQL access for chat only.
+api/ persists merchant-to-session binding metadata in PostgreSQL.
+ai/ stores chat message history in its own session store and also has merchant-scoped read-only PostgreSQL access for chat analytics.
 ```
 
 ### 3.2 Service responsibilities
@@ -53,8 +54,8 @@ ai/ also has merchant-scoped read-only PostgreSQL access for chat only.
 | Service | Responsibilities | Must not own |
 | --- | --- | --- |
 | `web/` | UI, client state, rendering, merchant flows | DB access, LLM logic, finance math |
-| `api/` | Auth context, validation, writes, persistence, analytics queries, scorecard math, export generation, payment simulation, orchestration | Direct browser rendering, model inference |
-| `ai/` | Menu parsing, conversational reasoning, merchant-scoped read-only retrieval, optional anomaly detection | Writes, auth ownership, unrestricted DB access, export/file generation |
+| `api/` | Auth context, validation, writes, merchant/session binding persistence, analytics queries, scorecard math, export generation, payment simulation, orchestration | Direct browser rendering, model inference, chat history storage |
+| `ai/` | Stateless menu parsing, chat session state/history storage, session-aware conversational reasoning, merchant-scoped read-only retrieval, optional anomaly detection | Business writes, auth ownership, unrestricted DB access, export/file generation |
 
 ### 3.3 Operating mode
 
@@ -66,7 +67,9 @@ ai/ also has merchant-scoped read-only PostgreSQL access for chat only.
 ### 3.4 Data access rules
 
 - `api/` -> PostgreSQL: read/write
-- `ai/` -> PostgreSQL: read-only, merchant-scoped, chat only
+- `api/` persists `chat_sessions` only for merchant/session binding
+- `ai/` stores conversational history in an AI-owned session store
+- `ai/` -> PostgreSQL: read-only, merchant-scoped, chat analytics only
 - `api/` -> S3: generated export files
 
 ### 3.5 AI boundaries
@@ -74,7 +77,7 @@ ai/ also has merchant-scoped read-only PostgreSQL access for chat only.
 AI-powered:
 
 - Menu transcript parsing
-- Conversational analytics reasoning over merchant-scoped data
+- Conversational analytics reasoning over merchant-scoped data and AI-owned session history
 
 Deterministic:
 
@@ -84,6 +87,7 @@ Deterministic:
 - Scorecard formulas
 - LHDN export generation
 - Credit decision simulation
+- Merchant/session binding persistence in `api/`
 
 ## 4. Core Flows
 
@@ -95,6 +99,8 @@ Deterministic:
 4. `api` validates restricted values, assigns UI defaults, persists `menu_items`
 5. Merchant reviews and edits through `POST /v1/menu`
 
+`parse-menu` is stateless. It must not create or depend on any chat session.
+
 ### 4.2 POS order and simulated payment
 
 1. Merchant selects items and quantities
@@ -104,16 +110,28 @@ Deterministic:
 5. Success flow calls `POST /v1/orders/:id/paid`
 6. `api` sets `paid_at`
 
-### 4.3 Conversational analytics
+### 4.3 Chat session creation
 
-1. `web` sends question to `api`
+1. `web` calls `POST /v1/chat/sessions`
 2. `api` resolves trusted `merchantId`
-3. `api` calls `ai /v1/ask`
-4. `ai` runs merchant-scoped read-only queries
-5. `ai` returns answer and evidence
-6. `api` relays answer to `web`
+3. `api` calls `ai /v1/chat/sessions`
+4. `ai` creates an internal session and returns `sessionId`
+5. `api` inserts `chat_sessions` bound to that merchant and `sessionId`
+6. `api` returns `sessionId`
 
-### 4.4 LHDN export pack
+### 4.4 Conversational analytics turn
+
+1. `web` sends a message to `POST /v1/chat/sessions/:id/messages`
+2. `api` resolves trusted `merchantId`
+3. `api` loads the session and rejects cross-merchant access
+4. `api` calls `ai /v1/ask` with `merchantId`, `sessionId`, `timeZone`, and current question
+5. `ai` loads prior messages from its own session store
+6. `ai` uses `merchantId` for merchant-scoped read-only DB access
+7. `ai` runs read-only queries, appends the new turn to its own session store, and generates the answer
+8. `api` updates `chat_sessions.last_message_at`
+9. `api` returns the answer and evidence to `web`
+
+### 4.5 LHDN export pack
 
 1. `web` calls `POST /v1/exports/lhdn { from, to }`
 2. `api` creates `export_job`
@@ -127,7 +145,7 @@ Deterministic:
 6. `api` uploads files to S3
 7. `api` returns export-pack summary
 
-### 4.5 Credit application
+### 4.6 Credit application
 
 1. `web` calls `POST /v1/credit/apply`
 2. `api` computes scorecard from DB
@@ -187,6 +205,11 @@ Deterministic:
 #### `generated_documents.storage_provider`
 
 - `s3`
+
+#### `chat_sessions.status`
+
+- `active`
+- `closed`
 
 #### `merchants.registration_type`
 
@@ -558,7 +581,34 @@ Indexes:
 
 - `(merchant_id, expense_date DESC)`
 
-### 7.7 `export_jobs`
+### 7.7 `chat_sessions`
+
+| Column | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | BIGSERIAL PK | yes | |
+| `merchant_id` | BIGINT FK | yes | -> `merchants.id` |
+| `ai_session_id` | TEXT | yes | opaque session id returned by `ai/` |
+| `status` | TEXT | yes | `active` / `closed` |
+| `created_at` | TIMESTAMPTZ | yes | default `NOW()` |
+| `updated_at` | TIMESTAMPTZ | yes | default `NOW()` |
+| `last_message_at` | TIMESTAMPTZ | no | |
+
+Constraints:
+
+- `status IN ('active', 'closed')`
+
+Indexes:
+
+- unique `ai_session_id`
+- `(merchant_id, created_at DESC)`
+- `(merchant_id, last_message_at DESC)`
+
+Rule:
+
+- `chat_sessions` is the API-owned merchant/session binding used to authorize chat continuation
+- `ai_session_id` is the canonical session identifier returned to `web/` and forwarded back to `ai/`
+
+### 7.8 `export_jobs`
 
 | Column | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -583,7 +633,7 @@ Indexes:
 
 - `(merchant_id, created_at DESC)`
 
-### 7.8 `generated_documents`
+### 7.9 `generated_documents`
 
 | Column | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -616,6 +666,7 @@ Indexes:
 
 ### 8.1 Menu parsing and review
 
+- `POST /v1/menu/parse` and `ai /v1/parse-menu` are stateless
 - AI must treat compliance-like metadata as draft suggestions, not truth
 - AI must emit restricted **codes**, not human labels, for fields such as `unitCode`, `classificationCode`, `taxCode`, `stateCode`, and `msicCode`
 - If AI cannot infer a credible restricted value, omit it rather than inventing a code
@@ -658,8 +709,15 @@ On `POST /v1/orders`:
 ### 8.6 Chatbot rules
 
 - `api` authenticates merchant and forwards trusted merchant context
+- `api` owns chat session creation and merchant/session binding persistence
+- `web/` never sends DB credentials or a merchant-scoping token directly to `ai/`
+- `merchantId` supplied by `api/` is the scoping input that `ai/` uses for merchant-limited read access
+- `POST /v1/chat/sessions` creates the session; `POST /v1/chat/sessions/:id/messages` continues it
+- `api` must reject any session lookup where `chat_sessions.merchant_id` does not match the authenticated merchant
+- `api` does not persist or replay prior chat messages
+- `ai` owns session history and loads prior messages using `sessionId`
 - `ai` uses merchant-scoped read-only DB access only
-- No writes from `ai`
+- `ai` may write only to its own session store, never to the shared merchant PostgreSQL data store
 - Query limits, row limits, and timeouts must be enforced
 - Prefer parameterized helpers or merchant-scoped views over unconstrained free-form SQL
 
@@ -910,8 +968,9 @@ Recommended representation per document:
 9. `orders`
 10. `order_items`
 11. `expenses`
-12. `export_jobs`
-13. `generated_documents`
+12. `chat_sessions`
+13. `export_jobs`
+14. `generated_documents`
 
 ## 12. Key API Surface
 
@@ -925,7 +984,8 @@ Recommended representation per document:
 - `GET /v1/stats/today`
 - `GET /v1/stats/heatmap`
 - `GET /v1/stats/growth`
-- `POST /v1/ask`
+- `POST /v1/chat/sessions`
+- `POST /v1/chat/sessions/:id/messages`
 - `GET /v1/scorecard`
 - `POST /v1/exports/lhdn`
 - `POST /v1/credit/apply`
@@ -933,6 +993,7 @@ Recommended representation per document:
 
 `ai/`:
 
+- `POST /v1/chat/sessions`
 - `POST /v1/parse-menu`
 - `POST /v1/ask`
 - `POST /v1/anomaly` (optional)
