@@ -1,10 +1,18 @@
 import { Resend } from 'resend';
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+  contentId?: string;
+}
+
 export interface EmailMessage {
   to: { email: string; name?: string };
   subject: string;
   text: string;
   html?: string;
+  attachments?: EmailAttachment[];
 }
 
 let client: Resend | null = null;
@@ -30,6 +38,7 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
     subject: msg.subject,
     text: msg.text,
     ...(msg.html ? { html: msg.html } : {}),
+    ...(msg.attachments && msg.attachments.length ? { attachments: msg.attachments } : {}),
   });
 
   if (error) {

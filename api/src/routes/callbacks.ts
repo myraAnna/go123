@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import QRCode from 'qrcode';
 import { db } from '../db/index.js';
 import { sendEmail } from '../clients/resend.js';
 
@@ -94,23 +95,24 @@ callbacksRouter.get('/orders/:id/paid', async (c) => {
     });
   }
 
-  const items = await db<OrderItemRow[]>`
-    SELECT menu_item_id, name_snapshot, qty, unit_price_cents
-    FROM order_items
-    WHERE order_id = ${id}
-    ORDER BY id ASC
-  `;
-
-  const merchantRows = await db<MerchantRow[]>`
-    SELECT
-      business_name, owner_name, tin,
-      registration_type, registration_number,
-      sst_registration_number,
-      phone, email,
-      address_line1, address_line2, city, state_code, postcode, country_code
-    FROM merchants
-    WHERE id = ${String(order.merchant_id)}
-  `;
+  const [items, merchantRows] = await Promise.all([
+    db<OrderItemRow[]>`
+      SELECT menu_item_id, name_snapshot, qty, unit_price_cents
+      FROM order_items
+      WHERE order_id = ${id}
+      ORDER BY id ASC
+    `,
+    db<MerchantRow[]>`
+      SELECT
+        business_name, owner_name, tin,
+        registration_type, registration_number,
+        sst_registration_number,
+        phone, email,
+        address_line1, address_line2, city, state_code, postcode, country_code
+      FROM merchants
+      WHERE id = ${String(order.merchant_id)}
+    `,
+  ]);
   const merchant = merchantRows[0];
   const businessName = merchant?.business_name ?? 'Warung AI';
 
@@ -189,6 +191,31 @@ callbacksRouter.get('/orders/:id/paid', async (c) => {
     `Thank you for your purchase!`,
   ].join('\n');
 
+  const qrPayload = {
+    invoiceNumber,
+    orderId: orderIdStr,
+    merchant: businessName,
+    paidAt: paidAtIso,
+    totalCents: order.total_cents,
+    items: items.map((i) => ({
+      name: i.name_snapshot,
+      qty: i.qty,
+      unitPriceCents: i.unit_price_cents,
+    })),
+  };
+  let qrPngBuffer: Buffer | null = null;
+  try {
+    qrPngBuffer = await QRCode.toBuffer(JSON.stringify(qrPayload), {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 220,
+      type: 'png',
+    });
+  } catch (err) {
+    console.error('QR generation failed', err);
+  }
+  const qrCid = 'order-qr';
+
   const merchantBlockHtml = `
     <div style="font-weight:bold;font-size:16px;margin-bottom:4px;">${escapeHtml(businessName)}</div>
     ${merchant?.owner_name ? `<div style="color:#555;">${escapeHtml(merchant.owner_name)}</div>` : ''}
@@ -251,6 +278,13 @@ callbacksRouter.get('/orders/:id/paid', async (c) => {
         </tfoot>
       </table>
 
+      ${qrPngBuffer ? `
+      <div style="margin-top:32px;text-align:left;">
+        <img src="cid:${qrCid}" alt="Order QR code" width="110" height="110" style="display:block;border:1px solid #eee;padding:4px;background:#fff;" />
+        <div style="margin-top:6px;color:#999;font-size:10px;letter-spacing:1px;text-transform:uppercase;">Scan to verify</div>
+      </div>
+      ` : ''}
+
       <p style="margin-top:32px;color:#666;font-size:13px;text-align:center;">Thank you for your purchase!</p>
     </div>
   `;
@@ -261,6 +295,18 @@ callbacksRouter.get('/orders/:id/paid', async (c) => {
       subject: `Invoice ${invoiceNumber} from ${businessName}`,
       text,
       html,
+      ...(qrPngBuffer
+        ? {
+            attachments: [
+              {
+                filename: `${invoiceNumber}-qr.png`,
+                content: qrPngBuffer,
+                contentType: 'image/png',
+                contentId: qrCid,
+              },
+            ],
+          }
+        : {}),
     });
   } catch (err) {
     console.error('Email send failed', err);

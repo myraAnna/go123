@@ -43,6 +43,7 @@ Source of truth is migrations under `api/` once scaffolded — this section is a
 | `order_items` | `id` BIGSERIAL · `merchant_id` FK · `order_id` FK → orders · `menu_item_id` FK → menu_items · `name_snapshot` TEXT · `qty` INT · `unit_price_cents` INT (snapshot of price at order time) |
 | `expenses`    | `id` BIGSERIAL · `amount_cents` INT · `description` TEXT · `source` TEXT (`'receipt-scan'` \| `'manual'`) · `s3_key` TEXT NULL · `created_at` |
 | `merchants`   | `id` BIGSERIAL · profile (`business_name`, `owner_name`, `business_type`, `tin`, `registration_type`, `registration_number`, `phone`, `email` NULL) · address (`address_line1/2`, `city`, `state_code`, `postcode`, `country_code`) · MyInvois (`msic_code`, `sst_registration_number` NULL, `ttx_registration_number` NULL, `business_activity_description`) · `created_at` · `updated_at` |
+| `chat_sessions` | `id` BIGSERIAL · `merchant_id` FK · `ai_session_id` TEXT (session id issued by `ai/`) · `session_date` DATE (MYT) · `created_at` · UNIQUE `(merchant_id, session_date)` |
 
 Conventions: money is always `*_cents` INT; all timestamps are `TIMESTAMPTZ NOT NULL DEFAULT NOW()`; primary keys are `BIGSERIAL`.
 
@@ -285,11 +286,21 @@ Response `200`:
 }
 ```
 
-### 3.4 Conversational query
+### 3.4 Chat
 
-#### `POST /v1/ask`
+AI-powered conversational assistant. `api/` keeps **one session per merchant per day** (MYT) so the AI sees continuous context within the day and starts fresh the next morning. Session state itself lives in `ai/`; `api/` only persists the `(merchant_id, ai_session_id, session_date)` link in `chat_sessions`.
 
-BM-or-English natural-language question. `api/` calls `ai/` for SQL, validates SELECT-only, runs it.
+All three endpoints share a **find-or-create today's session** guard:
+
+1. `SELECT ai_session_id FROM chat_sessions WHERE merchant_id = $1 AND session_date = today_myt`.
+2. If missing, call `ai/` to mint a new session, then `INSERT ... ON CONFLICT (merchant_id, session_date) DO UPDATE SET ai_session_id = chat_sessions.ai_session_id RETURNING ai_session_id` — the self-referential update is a no-op that always returns the winning row, so a parallel request that inserted first is handled in a single statement (race-safe).
+3. Return the session id alongside every response so `web/` can correlate.
+
+`today_myt` is `(NOW() AT TIME ZONE 'Asia/Kuala_Lumpur')::date` — rollover happens at MY midnight, not UTC.
+
+#### `POST /v1/chat`
+
+Send a free-form question to the AI assistant for today's session. Auto-creates the session on first call of the day.
 
 Request:
 
@@ -301,13 +312,69 @@ Response `200`:
 
 ```json
 {
-  "sql": "SELECT to_char(created_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'Day') AS day_name, SUM(total_cents) AS revenue_cents FROM orders WHERE created_at >= date_trunc('month', NOW() AT TIME ZONE 'Asia/Kuala_Lumpur') GROUP BY 1 ORDER BY 2 ASC LIMIT 1",
-  "rows": [{ "day_name": "Selasa", "revenue_cents": 12000 }],
-  "answer": "Hari Selasa paling slow, bos. Revenue Selasa RM120, purata hari lain RM250."
+  "sessionId": "sess_abc123",
+  "answer": "Hari Selasa paling slow, bos. Revenue Selasa RM120, purata hari lain RM250.",
+  "evidence": [
+    { "label": "Selasa revenue",  "valueCents": 12000 },
+    { "label": "Other days avg",  "valueCents": 25000 }
+  ]
 }
 ```
 
-Errors: `400` (empty question, or `ai/` returned non-SELECT SQL — guardrail); `502` (`ai/` unreachable).
+- `answer` is free-form Malay/English from the LLM.
+- `evidence` is an ordered list of supporting metrics; each entry has `label` and at most one of `value` (string) / `valueCents` (int) / `valuePct` (number).
+
+Errors: `400` (empty/missing `question`); `502` (DB error initialising session, or `ai/` unreachable).
+
+#### `GET /v1/chat/messages`
+
+Return the full message history for today's session. Auto-creates the session if today's row doesn't exist yet — a fresh session returns `{ "sessionId": "...", "messages": [] }` so `web/` doesn't need to special-case "no session".
+
+Response `200`:
+
+```json
+{
+  "sessionId": "sess_abc123",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Bulan ni hari apa paling slow?",
+      "evidence": null,
+      "createdAt": "2026-04-25T03:12:45.000Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Hari Selasa paling slow, bos.",
+      "evidence": [{ "label": "Selasa revenue", "valueCents": 12000 }],
+      "createdAt": "2026-04-25T03:12:48.000Z"
+    }
+  ]
+}
+```
+
+- `role` is `"user" | "assistant"`.
+- `evidence` is `null` for user messages and either `null` or an array for assistant messages.
+
+Errors: `502` (DB error initialising session, or `ai/` unreachable).
+
+#### `POST /v1/chat/suggest-questions`
+
+Return a list of suggested prompts for today's session — used to populate the chat welcome screen and follow-up chips. Auto-creates the session if needed; no request body.
+
+Response `200`:
+
+```json
+{
+  "sessionId": "sess_abc123",
+  "suggestedQuestions": [
+    "Bulan ni hari apa paling slow?",
+    "Item mana paling laku?",
+    "Margin saya berapa bulan ni?"
+  ]
+}
+```
+
+Errors: `502` (DB error initialising session, or `ai/` unreachable).
 
 ### 3.5 Scorecard & credit
 
@@ -732,7 +799,7 @@ app.use('*', async (c, next) => {
 - **Raw timestamps on the wire**: UTC ISO-8601 strings (`"2026-04-24T03:12:45.000Z"`).
 - **Bucketed aggregations** (heatmap day/hour, "today", monthly sparkline): computed in **MYT (UTC+8)** inside `api/` SQL. Use `AT TIME ZONE 'Asia/Kuala_Lumpur'` in Postgres.
 - **Display formatting** (`RM 12.50`, `24 Apr 2026`): only in `web/`. Never mixed into wire fields.
-- **BM language.** The `answer` field of `POST /v1/ask` is free-form Malay / English mix — it's natural language from the LLM, not structured data. Menu parser preserves names verbatim (`"Nasi Lemak Biasa"`, not lowercased).
+- **BM language.** The `answer` field of `POST /v1/chat` (and the `content` of assistant messages from `GET /v1/chat/messages`) is free-form Malay / English mix — it's natural language from the LLM, not structured data. Menu parser preserves names verbatim (`"Nasi Lemak Biasa"`, not lowercased).
 
 ---
 
