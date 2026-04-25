@@ -17,7 +17,7 @@
 ## Endpoints
 
 **Menu**: `POST /v1/menu/parse`, `GET /v1/menu`, `POST /v1/menu`  
-**Orders**: `POST /v1/orders`, `POST /v1/orders/:id/paid`  
+**Orders**: `POST /v1/orders`, `GET /v1/orders`, `GET /v1/orders/:id`, `POST /v1/orders/:id/paid`  
 **Stats**: `GET /v1/stats/today`, `GET /v1/stats/heatmap`, `GET /v1/stats/growth`  
 **AI**: `POST /v1/ask` (call `ai/` for SQL, validate SELECT-only)  
 **Credit**: `GET /v1/scorecard`, `POST /v1/einvoice/generate`, `POST /v1/credit/apply`  
