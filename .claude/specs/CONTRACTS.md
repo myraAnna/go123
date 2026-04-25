@@ -241,20 +241,66 @@ The invoice email includes: invoice number (`INV-` + zero-padded order id), issu
 
 Default window: last 30 days. All endpoints accept optional `?since=ISO&until=ISO` query params. Bucketed fields (`dayOfWeek`, `hour`, `month`) are **MYT (UTC+8)**; raw timestamps stay UTC.
 
-#### `GET /v1/stats/today`
+#### `GET /v1/stats/summary`
+
+Headline KPIs for the window. Pass `compare=true` for period-over-period change vs. the equally-sized window immediately before `since`.
 
 Response `200`:
 
 ```json
 {
-  "totalCents": 12350,
-  "orderCount": 28,
-  "topItems": [
-    { "menuItemId": "1", "name": "Nasi Lemak Biasa", "qty": 22, "revenueCents": 11000 },
-    { "menuItemId": "2", "name": "Ayam Goreng",      "qty": 14, "revenueCents": 5600 }
+  "revenueCents": 1850000,
+  "orderCount": 412,
+  "averageOrderValueCents": 4490,
+  "periodDays": 30,
+  "comparePrevious": {
+    "revenueChangePct": 12.4,
+    "orderCountChangePct": 8.1
+  }
+}
+```
+
+- `comparePrevious` is `null` when `compare` is omitted/false, or when the previous window has no orders.
+- `averageOrderValueCents` is `0` when `orderCount` is `0`.
+
+#### `GET /v1/stats/top-items`
+
+Best- and worst-selling items in the window. `worst` includes menu items with zero sales (LEFT JOIN), so the merchant can spot dead stock. Optional `?limit=N`, default `10`, clamped to `[1, 50]`.
+
+Response `200`:
+
+```json
+{
+  "best": [
+    { "menuItemId": "1", "name": "Nasi Lemak", "qty": 220, "revenueCents": 110000 }
+  ],
+  "worst": [
+    { "menuItemId": "9", "name": "Roti Bakar", "qty": 0, "revenueCents": 0 }
   ]
 }
 ```
+
+- `name` is the current `menu_items.name` (not the historical snapshot).
+
+#### `GET /v1/stats/trend`
+
+Revenue + order count time series for charts. `?bucket=day|week|month|auto` selects bucket size; `auto` (default) picks `day` for windows ≤14 days, `week` for ≤90 days, `month` otherwise. Empty buckets are zero-filled.
+
+Response `200`:
+
+```json
+{
+  "bucket": "day",
+  "points": [
+    { "bucket": "2026-04-01", "revenueCents": 24000, "orderCount": 6 },
+    { "bucket": "2026-04-02", "revenueCents": 31000, "orderCount": 8 }
+  ]
+}
+```
+
+- `bucket` field at top level echoes the resolved bucket so the frontend doesn't need to recompute.
+- Each point's `bucket` is the first day of that bucket in MYT, formatted `YYYY-MM-DD`.
+- Unknown `bucket` values fall back to `auto` (no `400`).
 
 #### `GET /v1/stats/heatmap`
 
@@ -271,20 +317,7 @@ Response `200`:
 }
 ```
 
-#### `GET /v1/stats/growth`
-
-Response `200`:
-
-```json
-{
-  "monthOverMonthPct": 15.2,
-  "sparkline": [
-    { "month": "2026-02", "revenueCents": 450000 },
-    { "month": "2026-03", "revenueCents": 520000 },
-    { "month": "2026-04", "revenueCents": 610000 }
-  ]
-}
-```
+- Sparse — only cells with at least one paid order are returned. The frontend should render missing cells as zero.
 
 ### 3.4 Chat
 
