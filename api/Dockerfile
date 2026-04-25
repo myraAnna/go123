@@ -16,4 +16,4 @@ COPY --from=base /app .
 
 EXPOSE 3001
 ENV NODE_ENV=production
-CMD ["bun", "run", "start"]
+CMD ["bun", "run", "src/index.ts"]

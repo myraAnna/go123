@@ -17,8 +17,9 @@ COPY src ./src
 FROM python:3.13-slim AS production
 WORKDIR /app
 COPY --from=base /app .
-COPY --from=base /root/.local/bin/uv /root/.local/bin/uv
+COPY --from=base /usr/local/bin/uv /usr/local/bin/uv
 
 EXPOSE 8001
 ENV PYTHONUNBUFFERED=1
-CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001"]
+ENV PYTHONPATH=/app/src
+CMD ["uv", "run", "--no-dev", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
