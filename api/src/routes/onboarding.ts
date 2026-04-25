@@ -73,10 +73,16 @@ onboardingRouter.post('/image', async (c) => {
     category: 'other',
   }));
 
-  const inserted = await db`
-    INSERT INTO menu_items ${db(rows, 'merchant_id', 'name', 'price_cents', 'category')}
-    RETURNING id, name, price_cents, category
-  `;
+  let inserted: { id: bigint; name: string; price_cents: number; category: string }[];
+  try {
+    inserted = await db`
+      INSERT INTO menu_items ${db(rows, 'merchant_id', 'name', 'price_cents', 'category')}
+      RETURNING id, name, price_cents, category
+    `;
+  } catch (err) {
+    console.error('DB insert failed for menu_items', err);
+    return c.json({ error: 'Failed to save menu items' }, 500);
+  }
 
   return c.json(
     { items: inserted.map((r) => ({ id: String(r.id), name: r.name, priceCents: r.price_cents, category: r.category })) },

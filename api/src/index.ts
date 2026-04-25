@@ -13,7 +13,7 @@ app.use('/*', cors({
 app.use('/v1/*', authMiddleware);
 
 app.get('/health', (c) => {
-  return c.json({ ok: true, service: 'api', version: '0.1.0', mode: 'real' });
+  return c.json({ ok: true, service: 'api', version: '0.1.0', mode: process.env.FAKE_MODE === '1' ? 'fake' : 'real' });
 });
 
 app.route('/v1/onboarding', onboardingRouter);
