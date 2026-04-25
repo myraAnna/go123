@@ -4,6 +4,7 @@ import { authMiddleware } from './middleware/auth.js';
 import { onboardingRouter } from './routes/onboarding.js';
 import { merchantsRouter } from './routes/merchants.js';
 import { ordersRouter } from './routes/orders.js';
+import { callbacksRouter } from './routes/callbacks.js';
 
 const app = new Hono();
 
@@ -20,6 +21,7 @@ app.get('/health', (c) => {
 app.route('/v1/onboarding', onboardingRouter);
 app.route('/v1/merchants', merchantsRouter);
 app.route('/v1/orders', ordersRouter);
+app.route('/callback', callbacksRouter);
 
 const port = parseInt(process.env.PORT || '3001', 10);
 console.log(`API server running on http://localhost:${port}`);
