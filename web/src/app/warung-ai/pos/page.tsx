@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Mic,
   Plus,
+  Minus,
   ShoppingBag,
   Bot,
   TrendingUp,
@@ -54,7 +55,19 @@ export default function POSPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<Category>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [cart, setCart] = useState<Record<string, number>>({});
+
+  const addToCart = (id: string) =>
+    setCart((c) => ({ ...c, [id]: (c[id] ?? 0) + 1 }));
+
+  const removeFromCart = (id: string) =>
+    setCart((c) => {
+      const next = { ...c };
+      const qty = (next[id] ?? 0) - 1;
+      if (qty <= 0) delete next[id];
+      else next[id] = qty;
+      return next;
+    });
 
   useEffect(() => {
     let cancelled = false;
@@ -84,10 +97,19 @@ export default function POSPage() {
     return items.filter((it) => it.category === activeFilter);
   }, [items, activeFilter]);
 
-  const selected = useMemo(
-    () => items?.find((it) => it.id === selectedId) ?? null,
-    [items, selectedId],
-  );
+  const cartTotals = useMemo(() => {
+    if (!items) return { qty: 0, cents: 0 };
+    let qty = 0;
+    let cents = 0;
+    for (const item of items) {
+      const q = cart[item.id] ?? 0;
+      if (q > 0) {
+        qty += q;
+        cents += q * item.priceCents;
+      }
+    }
+    return { qty, cents };
+  }, [items, cart]);
 
   const isEmpty = !loading && !error && (items?.length ?? 0) === 0;
   const hasItems = !loading && !error && (items?.length ?? 0) > 0;
@@ -169,15 +191,15 @@ export default function POSPage() {
           {hasItems && (
             <div className="grid grid-cols-2 gap-3 mt-1">
               {filtered.map((item) => {
-                const isSelected = item.id === selectedId;
+                const qty = cart[item.id] ?? 0;
+                const inCart = qty > 0;
                 const badgeClass =
                   CATEGORY_BADGE[item.category] ?? CATEGORY_BADGE.other;
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => setSelectedId(isSelected ? null : item.id)}
-                    className={`text-left bg-white rounded-xl px-3 py-3 flex flex-col gap-2 border transition-colors ${
-                      isSelected
+                    className={`bg-white rounded-xl px-3 py-3 flex flex-col gap-2 border transition-colors ${
+                      inCart
                         ? "border-[#2563EB] ring-1 ring-[#2563EB] bg-[#EFF6FF]"
                         : "border-[#E5E7EB]"
                     }`}
@@ -190,10 +212,42 @@ export default function POSPage() {
                     >
                       {item.category}
                     </span>
-                    <span className="text-[#1D4ED8] text-base font-bold">
-                      {formatRM(item.priceCents)}
-                    </span>
-                  </button>
+                    <div className="flex items-center justify-between mt-auto pt-1">
+                      <span className="text-[#1D4ED8] text-base font-bold">
+                        {formatRM(item.priceCents)}
+                      </span>
+                      {inCart ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => removeFromCart(item.id)}
+                            aria-label={`Remove one ${item.name}`}
+                            className="w-6 h-6 rounded-full bg-white border border-[#CBD5E1] flex items-center justify-center active:scale-95"
+                          >
+                            <Minus className="w-3 h-3 text-[#0F172A]" />
+                          </button>
+                          <span className="text-[13px] font-bold text-[#0F172A] min-w-[14px] text-center tabular-nums">
+                            {qty}
+                          </span>
+                          <button
+                            onClick={() => addToCart(item.id)}
+                            aria-label={`Add one ${item.name}`}
+                            className="w-6 h-6 rounded-full bg-[#2563EB] flex items-center justify-center active:scale-95"
+                          >
+                            <Plus className="w-3 h-3 text-white" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => addToCart(item.id)}
+                          aria-label={`Add ${item.name} to cart`}
+                          className="flex items-center gap-1 bg-[#2563EB] text-white text-[11px] font-semibold pl-2 pr-2.5 h-7 rounded-full active:scale-95"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Add
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
               {filtered.length === 0 && (
@@ -233,7 +287,7 @@ export default function POSPage() {
         </div>
 
         {/* Order summary */}
-        {hasItems && selected && (
+        {hasItems && cartTotals.qty > 0 && (
           <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-[390px] bg-white border-t border-[#E5E7EB] px-5 pt-4 pb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
@@ -241,13 +295,13 @@ export default function POSPage() {
                 <span className="text-[#0F172A] text-sm font-bold">Order Summary</span>
               </div>
               <span className="bg-[#FEF3C7] text-[#92400E] text-[11px] font-semibold px-2.5 py-1 rounded-full">
-                1 item
+                {cartTotals.qty} {cartTotals.qty === 1 ? "item" : "items"}
               </span>
             </div>
             <div className="flex items-center justify-between mb-3 pt-2 border-t border-[#F1F5F9]">
               <span className="text-[#64748B] text-sm">Total</span>
-              <span className="text-[#0F172A] text-lg font-bold">
-                {formatRM(selected.priceCents)}
+              <span className="text-[#0F172A] text-lg font-bold tabular-nums">
+                {formatRM(cartTotals.cents)}
               </span>
             </div>
             <button className="w-full h-12 rounded-[24px] bg-[#2563EB] text-white text-[15px] font-bold flex items-center justify-center gap-2">
