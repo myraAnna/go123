@@ -88,8 +88,8 @@ onboardingRouter.post('/image', async (c) => {
 onboardingRouter.post('/form', async (c) => {
   const merchantId = c.get('merchantId');
 
-  const body = await c.req.json<{ items?: unknown[] }>().catch(() => ({}));
-  if (!Array.isArray(body?.items) || body.items.length === 0) {
+  const body = await c.req.json<{ items?: unknown[] }>().catch(() => ({} as { items?: unknown[] }));
+  if (!Array.isArray(body.items) || body.items.length === 0) {
     return c.json({ error: 'items must be a non-empty array' }, 400);
   }
 
