@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { db } from '../db/index.js';
-import { uploadBuffer } from '../clients/s3.js';
+import { uploadBuffer, getPresignedUrl } from '../clients/s3.js';
 import { parseMenuImage } from '../clients/ai.js';
 
 export const onboardingRouter = new Hono();
@@ -74,9 +74,17 @@ onboardingRouter.post('/image', async (c) => {
     return c.json({ error: 'Failed to record upload' }, 500);
   }
 
+  let imageUrl: string;
+  try {
+    imageUrl = getPresignedUrl(key);
+  } catch (err) {
+    console.error('Presign failed', err);
+    return c.json({ error: 'Failed to presign image url' }, 500);
+  }
+
   let parsed: { name: string; priceCents: number; category: string }[];
   try {
-    parsed = await parseMenuImage(key);
+    parsed = await parseMenuImage(imageUrl);
   } catch (err) {
     console.error('AI parse failed', err);
     return c.json({ error: 'AI service unavailable' }, 502);
@@ -100,7 +108,7 @@ onboardingRouter.post('/form', async (c) => {
     return c.json({ error: 'items must be a non-empty array' }, 400);
   }
 
-  const items = body.items as Array<{ name?: unknown; priceCents?: unknown }>;
+  const items = body.items as Array<{ name?: unknown; priceCents?: unknown; category?: unknown }>;
   for (const item of items) {
     if (typeof item.name !== 'string' || !item.name.trim()) {
       return c.json({ error: 'Each item must have a non-empty name' }, 400);
@@ -108,13 +116,16 @@ onboardingRouter.post('/form', async (c) => {
     if (typeof item.priceCents !== 'number' || !Number.isInteger(item.priceCents) || item.priceCents < 1) {
       return c.json({ error: 'Each item must have priceCents >= 1' }, 400);
     }
+    if (item.category !== undefined && !isCategory(item.category)) {
+      return c.json({ error: `category must be one of ${ALLOWED_CATEGORIES.join(', ')}` }, 400);
+    }
   }
 
   const rows = items.map((item) => ({
     merchant_id: merchantId,
     name: (item.name as string).trim(),
     price_cents: item.priceCents as number,
-    category: 'other',
+    category: isCategory(item.category) ? item.category : 'other',
   }));
 
   const inserted = (await db`
