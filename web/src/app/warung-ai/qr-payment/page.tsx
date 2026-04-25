@@ -40,6 +40,13 @@ export default function QRPaymentPage() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    const id = setTimeout(() => {
+      router.replace("/warung-ai/payment-received");
+    }, 8000);
+    return () => clearTimeout(id);
+  }, [router]);
+
   const qrValue = useMemo(() => {
     if (!order) return "";
     return paidCallbackUrl(order.orderId);
