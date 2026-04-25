@@ -10,7 +10,7 @@ Wire contracts between `web/`, `api/`, and `ai/` for the Warung AI Bookkeeper. L
 
 1. [Wire conventions](#1-wire-conventions)
 2. [DB field reference](#2-db-field-reference)
-3. [`api/` endpoints](#3-api-endpoints)
+3. [`api/` endpoints](#3-api-endpoints) — includes §3.7 Onboarding
 4. [`ai/` endpoints](#4-ai-endpoints)
 5. [Stub mode (`FAKE_MODE=1`)](#5-stub-mode-fake_mode1)
 6. [Shared middleware](#6-shared-middleware)
@@ -274,6 +274,166 @@ Response `200`:
 }
 ```
 
+### 3.7 Onboarding
+
+Merchant setup flow:
+
+1. **Image path**: upload menu image → AI extracts a draft list (not persisted) → merchant reviews, edits, adds, removes in `web/` → submit via `POST /v1/onboarding/menu/verify` to commit.
+2. **Manual path**: submit items directly via `POST /v1/onboarding/form` (persists immediately with `category = "other"`).
+
+Subsequent edits use `PATCH /v1/onboarding/menu/:id` (single) or `PATCH /v1/onboarding/menu` (batch).
+
+#### `POST /v1/onboarding/image`
+
+Upload a menu image (multipart/form-data). API uploads it to S3, records the upload in `merchant_menu_uploads` for audit, then calls `ai/` to parse items and **returns the draft list to `web/` without persisting any menu rows**. The merchant verifies the list client-side and commits it via `POST /v1/onboarding/menu/verify`.
+
+Request: `multipart/form-data` with field `image` (jpeg, png, webp, or gif).
+
+Response `200`:
+
+```json
+{
+  "items": [
+    { "name": "Nasi Lemak Biasa", "priceCents": 500, "category": "main" },
+    { "name": "Teh Tarik",        "priceCents": 200, "category": "drink" }
+  ]
+}
+```
+
+- No `id` field — these aren't persisted yet.
+- `category` is whatever the AI returned, falling back to `"other"` if it isn't one of the allowed values.
+- Returns `{ "items": [] }` if the AI finds no items.
+
+Errors: `400` (missing `image` field); `415` (unsupported MIME type); `500` (DB error recording the upload); `502` (S3 upload failed or `ai/` unreachable).
+
+#### `POST /v1/onboarding/form`
+
+Manually submit an initial menu. All items are inserted with `category = "other"`.
+
+Request:
+
+```json
+{
+  "items": [
+    { "name": "Nasi Lemak", "priceCents": 500 },
+    { "name": "Teh Tarik",  "priceCents": 200 }
+  ]
+}
+```
+
+Response `201`:
+
+```json
+{
+  "items": [
+    { "id": "1", "name": "Nasi Lemak", "priceCents": 500, "category": "other" },
+    { "id": "2", "name": "Teh Tarik",  "priceCents": 200, "category": "other" }
+  ]
+}
+```
+
+Errors: `400` (empty `items`, non-string/empty `name`, `priceCents` not a positive integer).
+
+#### `GET /v1/onboarding/menu`
+
+List all menu items for the merchant (used to review after initial upload).
+
+Response `200`:
+
+```json
+{
+  "items": [
+    { "id": "1", "name": "Nasi Lemak", "priceCents": 500, "category": "other" }
+  ]
+}
+```
+
+#### `PATCH /v1/onboarding/menu/:id`
+
+Update a single menu item. Send only the fields to change; omitted fields are left unchanged.
+
+Request:
+
+```json
+{ "name": "Nasi Lemak Biasa", "priceCents": 550, "category": "main" }
+```
+
+Response `200`:
+
+```json
+{ "item": { "id": "1", "name": "Nasi Lemak Biasa", "priceCents": 550, "category": "main" } }
+```
+
+Errors: `400` (invalid `id`, empty body, invalid field values, invalid `category`); `404` (item not found for this merchant).
+
+`category` must be one of `"main" | "side" | "drink" | "dessert" | "other"`.
+
+#### `PATCH /v1/onboarding/menu`
+
+Bulk-update multiple menu items in a single transaction. All items must exist; any missing `id` rolls back the whole batch.
+
+Request:
+
+```json
+{
+  "items": [
+    { "id": "1", "category": "main" },
+    { "id": "2", "priceCents": 220, "category": "drink" }
+  ]
+}
+```
+
+Response `200`:
+
+```json
+{
+  "items": [
+    { "id": "1", "name": "Nasi Lemak Biasa", "priceCents": 550, "category": "main" },
+    { "id": "2", "name": "Teh Tarik",        "priceCents": 220, "category": "drink" }
+  ]
+}
+```
+
+Errors: `400` (non-numeric `id`, no fields to update, invalid field values); `404` (any `id` not found — entire batch rolled back).
+
+#### `POST /v1/onboarding/menu/verify`
+
+Commit a merchant-verified list of items (e.g. after editing the AI draft from `POST /v1/onboarding/image`). Inserts new items; **skips any whose `name` already exists for this merchant (case-insensitive)**. Also de-duplicates within the request itself, keeping the first occurrence of each name.
+
+Request:
+
+```json
+{
+  "items": [
+    { "name": "Nasi Lemak Biasa", "priceCents": 500, "category": "main" },
+    { "name": "Teh Tarik",        "priceCents": 200, "category": "drink" },
+    { "name": "Ayam Goreng",      "priceCents": 400, "category": "main" }
+  ]
+}
+```
+
+- Every item must include `name`, `priceCents` (positive integer), and `category` (one of `"main" | "side" | "drink" | "dessert" | "other"`).
+- No `id` field — this endpoint is insert-only. Use `PATCH /v1/onboarding/menu/:id` to edit existing rows.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    { "id": "3", "name": "Ayam Goreng", "priceCents": 400, "category": "main" }
+  ],
+  "skippedCount": 2
+}
+```
+
+- `items` are the rows actually inserted.
+- `skippedCount` covers both intra-request duplicates and existing-DB matches.
+- If everything was a duplicate, returns `{ "items": [], "skippedCount": N }` with `200`.
+
+Errors: `400` (empty `items`, missing/empty `name`, `priceCents` not a positive integer, invalid `category`).
+
+---
+
 ### 3.6 Health
 
 #### `GET /health`
@@ -285,10 +445,6 @@ Response `200`:
 ```
 
 `mode` is `"fake"` when `FAKE_MODE=1`. See §5.
-
-### 3.7 Optional (scope-dependent)
-
-- **`POST /v1/expenses/scan-receipt`** — receipt OCR via Textract, feeds the diligence scorecard. Deferred until we confirm whether receipt scanning is in the demo scope.
 
 ---
 
