@@ -3,6 +3,7 @@ const AI_BASE = process.env.AI_URL ?? 'http://localhost:3001/_ai';
 export interface ParsedItem {
   name: string;
   priceCents: number;
+  category: string;
 }
 
 export async function parseMenuImage(s3Key: string): Promise<ParsedItem[]> {
