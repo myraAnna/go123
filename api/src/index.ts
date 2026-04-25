@@ -5,6 +5,7 @@ import { onboardingRouter } from './routes/onboarding.js';
 import { merchantsRouter } from './routes/merchants.js';
 import { ordersRouter } from './routes/orders.js';
 import { callbacksRouter } from './routes/callbacks.js';
+import { chatRouter } from './routes/chat.js';
 
 const app = new Hono();
 
@@ -21,6 +22,7 @@ app.get('/health', (c) => {
 app.route('/v1/onboarding', onboardingRouter);
 app.route('/v1/merchants', merchantsRouter);
 app.route('/v1/orders', ordersRouter);
+app.route('/v1/chat', chatRouter);
 app.route('/callback', callbacksRouter);
 
 const port = parseInt(process.env.PORT || '3001', 10);
