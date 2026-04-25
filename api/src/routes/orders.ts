@@ -110,6 +110,49 @@ ordersRouter.get('/', async (c) => {
   });
 });
 
+// GET /v1/orders/:id
+ordersRouter.get('/:id', async (c) => {
+  const merchantId = c.get('merchantId');
+  const id = c.req.param('id');
+
+  if (!/^\d+$/.test(id)) {
+    return c.json({ error: 'id must be a numeric string' }, 400);
+  }
+
+  const orders = await db<OrderRow[]>`
+    SELECT id, merchant_id, total_cents, paid_at, buyer_email, created_at
+    FROM orders
+    WHERE id = ${id} AND merchant_id = ${merchantId}
+  `;
+
+  if (orders.length === 0) {
+    return c.json({ error: 'Order not found' }, 404);
+  }
+  const order = orders[0];
+
+  const items = await db<OrderItemRow[]>`
+    SELECT menu_item_id, name_snapshot, qty, unit_price_cents
+    FROM order_items
+    WHERE order_id = ${id}
+    ORDER BY id ASC
+  `;
+
+  return c.json({
+    orderId: String(order.id),
+    items: items.map((i) => ({
+      menuItemId: String(i.menu_item_id),
+      name: i.name_snapshot,
+      qty: i.qty,
+      unitPriceCents: i.unit_price_cents,
+      lineTotalCents: i.unit_price_cents * i.qty,
+    })),
+    totalCents: order.total_cents,
+    paidAt: order.paid_at ? order.paid_at.toISOString() : null,
+    buyerEmail: order.buyer_email,
+    createdAt: order.created_at.toISOString(),
+  });
+});
+
 // POST /v1/orders
 ordersRouter.post('/', async (c) => {
   const merchantId = c.get('merchantId');

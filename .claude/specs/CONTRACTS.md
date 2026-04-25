@@ -169,6 +169,34 @@ Response `200`:
 
 Errors: `400` (invalid `from`/`to`).
 
+#### `GET /v1/orders/:id`
+
+Fetch a single order (with its line items) by ID, scoped to the current merchant.
+
+Path params:
+
+- `id` — numeric string; the order ID.
+
+Response `200`:
+
+```json
+{
+  "orderId": "42",
+  "items": [
+    { "menuItemId": "1", "name": "Nasi Lemak Biasa", "qty": 2, "unitPriceCents": 500, "lineTotalCents": 1000 },
+    { "menuItemId": "3", "name": "Telur Mata",       "qty": 1, "unitPriceCents": 150, "lineTotalCents": 150 }
+  ],
+  "totalCents": 1150,
+  "paidAt": "2026-04-24T03:13:02.000Z",
+  "buyerEmail": "buyer@example.com",
+  "createdAt": "2026-04-24T03:12:45.000Z"
+}
+```
+
+- `paidAt` and `buyerEmail` are `null` for unpaid orders.
+
+Errors: `400` (non-numeric `id`); `404` (order not found for this merchant).
+
 #### `GET /callback/orders/:id/paid?email=...`
 
 **Public payment callback — exception to the `/v1/*` rule.** Lives under `/callback/`, bypasses the `X-Merchant-Id` auth middleware, and is designed to be encoded directly into the order's QR code so a phone scan triggers it with no headers and no body.
